@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+.DS_Store
+*.xcuserstate
+DerivedData/
+mac-control-mcp-*.zip
+mac-control-mcp-*.sha256
+dist/

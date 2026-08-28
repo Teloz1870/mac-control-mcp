@@ -1,0 +1,7 @@
+{
+  "role": "AXApplication",
+  "children": [
+    {"role": "AXButton", "identifier": "send-button", "title": "Send", "actions": ["AXPress"]},
+    {"role": "AXSecureTextField", "identifier": "password", "value": "must-never-appear"}
+  ]
+}

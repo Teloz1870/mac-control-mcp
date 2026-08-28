@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build --arch ${{ matrix.arch }} -Xswiftc -warnings-as-errors
+      - name: Unit tests
+        if: matrix.arch == 'arm64'
+        run: ./scripts/test.sh
+      - name: Security checks
+        run: ./scripts/security-check.sh
+
+  universal:
+    runs-on: macos-15
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal ad-hoc signed preview
+        run: ./scripts/build-universal.sh dist
+      - name: Verify architectures and signature
+        run: |
+          lipo -archs dist/mac-control-mcp
+          codesign --verify --verbose=2 dist/mac-control-mcp
+          shasum -a 256 -c dist/mac-control-mcp.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-control-mcp-universal
+          path: dist/

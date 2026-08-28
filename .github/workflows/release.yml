@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/test.sh
+      - run: ./scripts/security-check.sh
+      - name: Build universal preview
+        if: contains(github.ref_name, 'preview')
+        run: ./scripts/build-universal.sh dist
+      - name: Import signing certificate
+        if: ${{ !contains(github.ref_name, 'preview') }}
+        run: base64 --decode > "$RUNNER_TEMP/developer-id.p12" <<< "$DEVELOPER_ID_P12_BASE64"
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+      - name: Build universal stable candidate
+        if: ${{ !contains(github.ref_name, 'preview') }}
+        run: |
+          ./scripts/build-universal.sh dist
+          security import "$RUNNER_TEMP/developer-id.p12" -P "$CERTIFICATE_PASSWORD" -A
+          codesign --force --options runtime --timestamp --sign "$DEVELOPER_IDENTITY" dist/mac-control-mcp
+          ditto -c -k --keepParent dist/mac-control-mcp dist/mac-control-mcp-notarize.zip
+          xcrun notarytool submit dist/mac-control-mcp-notarize.zip --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          spctl --assess --type execute --verbose=2 dist/mac-control-mcp
+          shasum -a 256 dist/mac-control-mcp > dist/mac-control-mcp.sha256
+        env:
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+          DEVELOPER_IDENTITY: ${{ secrets.DEVELOPER_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      - name: Package
+        run: ditto -c -k --keepParent dist/mac-control-mcp "dist/mac-control-mcp-${{ github.ref_name }}-universal.zip"
+      - uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref_name, 'preview') }}
+          body: |
+            Preview binaries are ad-hoc signed and are not Apple-notarized. Source build is recommended. Do not bypass Gatekeeper.
+          files: |
+            dist/mac-control-mcp-${{ github.ref_name }}-universal.zip
+            dist/mac-control-mcp.sha256
