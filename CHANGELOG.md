@@ -6,6 +6,13 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ### Fixed
 
+Found by running the adapter against Grok Bot 0.29 for the first time:
+
+- The scan depth of 12 stopped above everything that matters. Grok Bot derives its Accessibility tree from the DOM, so its sidebar sits past depth 18 — `grokbot_list_bots` returned an empty list rather than an error, which reads as "no bots" instead of "I did not look far enough". Default depth is now 30 and 8000 nodes, and the adapter uses the configuration instead of six hardcoded limits.
+- `grokbot_list_bots` and `grokbot_open_bot` now anchor on the app's own `Bot list` landmark and read each row's first label. They previously matched any `AXButton` carrying a title, which found suggestion chips.
+- `grokbot_read_conversation` is scoped to the `Conversation transcript` landmark and returns one entry per `AXDocumentArticle`, sender and timestamp included. It previously swept every static string in the app, so the settings panel appeared as conversation.
+- `submitText` trusts the `kAXFocused` readback rather than requiring the setter to also report success; a field that already held focus was refused.
+
 Three defects found by peer review of `d51cef4` ([report](handovers/2026-08-29-grok-r1-report.md)):
 
 - `ElementTree` no longer accepts an element with an empty path as a container. Every path starts with the empty path, so a root element or a pre-schema-2 snapshot silently became the ancestor of the whole app — defeating the widget scoping these helpers exist to enforce.

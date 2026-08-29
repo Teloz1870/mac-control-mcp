@@ -25,6 +25,13 @@ public final class GrokBotAdapter: AppAdapter {
                 .init(role: "AXButton", identifier: "conversation-details"),
                 .init(role: "AXButton", description: "View conversation details"),
             ]),
+            .init(name: "bot-list", candidates: [
+                .init(role: "AXGroup", description: "Bot list"),
+                .init(role: "AXGroup", description: "Bots"),
+            ]),
+            .init(name: "transcript", candidates: [
+                .init(role: "AXGroup", description: "Conversation transcript"),
+            ]),
             .init(name: "question-widget", candidates: [
                 .init(role: "AXGroup", identifier: "question-widget"),
                 .init(role: "AXGroup", identifier: "question"),
@@ -113,29 +120,74 @@ public final class GrokBotAdapter: AppAdapter {
         return Status(running: true, version: app.version ?? "unknown", compatible: Self.isSupported(version: app.version ?? "unknown"), active: app.active, windows: windows)
     }
 
+    /// Resolves a named selector against an inspection already in hand, so a call that
+    /// needs several landmarks does not re-traverse the app once per landmark.
+    private func locate(_ name: String, in elements: [ElementSnapshot]) throws -> ElementSnapshot {
+        guard let selector = selectors.first(where: { $0.name == name }) else {
+            throw MacControlError.invalidArgument("No selector named \(name)")
+        }
+        for candidate in selector.candidates {
+            if let match = elements.first(where: { SemanticMatcher.matches($0, query: candidate) }) { return match }
+        }
+        throw MacControlError.elementNotFound("\(Self.identifier).\(name); tested \(selector.candidates.count) selectors. Run mac_scan_capabilities and update the adapter.")
+    }
+
+    /// Rows of the sidebar's bot list. Anchored on the app's own "Bot list" landmark;
+    /// structure is used only inside that landmark, never to find it.
+    private func botRows(in elements: [ElementSnapshot]) throws -> [(row: ElementSnapshot, name: String)] {
+        let list = try locate("bot-list", in: elements)
+        let inList = ElementTree.descendants(of: list, in: elements)
+        guard let content = inList.first(where: { $0.role == "AXList" }) else {
+            throw MacControlError.elementNotFound("\(Self.identifier).bot-list contains no AXList")
+        }
+        return inList
+            .filter { $0.path.count == content.path.count + 1 && ElementTree.isDescendant($0, of: content) }
+            .compactMap { row in
+                guard let name = ElementTree.descendants(of: row, in: elements)
+                    .first(where: { $0.role == "AXStaticText" })?
+                    .value?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+                return (row, name)
+            }
+    }
+
     private func listBots() throws -> [String] {
-        let elements = try fullTree()
-        let excluded = Set(["new bot", "search", "plugins", "settings", "update", "view conversation details", "close", "minimize", "zoom"])
-        return Array(Set(elements.filter { $0.role == "AXButton" && $0.actions.contains(kAXPressAction) }.compactMap { item in
-            guard let title = item.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty,
-                  !excluded.contains(where: { title.lowercased().hasPrefix($0) }), title.count <= 120 else { return nil }
-            return title
-        })).sorted()
+        try botRows(in: try fullTree()).map(\.name)
     }
 
     private func openBot(name: String) throws {
-        try pressExactButton(title: name, purpose: "bot")
+        let elements = try fullTree()
+        let matches = try botRows(in: elements).filter { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
+        guard matches.count == 1, let row = matches.first?.row else {
+            throw MacControlError.elementNotFound("exactly one bot named \(name) in the sidebar; found \(matches.count)")
+        }
+        // The row itself is a plain group; the clickable element sits inside it. Take the
+        // first descendant that actually exposes a press rather than assuming a role.
+        guard let target = ElementTree.descendants(of: row, in: elements).first(where: { $0.actions.contains(kAXPressAction) })
+            ?? (row.actions.contains(kAXPressAction) ? row : nil) else {
+            throw MacControlError.elementNotFound("a pressable element inside the row for bot \(name)")
+        }
+        try ax.perform(handle: target.handle, action: kAXPressAction)
     }
 
+    /// Reads the transcript only. Scoping matters: an app-wide sweep of static text also
+    /// collects the settings panel and the sidebar, which then read as conversation.
     private func readConversation(limit: Int) throws -> [String] {
         let elements = try fullTree()
-        let controls = Set(["Bots", "New Bot", "Search", "View conversation details", "Send"])
-        var messages: [String] = []
-        for item in elements where ["AXStaticText", "AXTextArea"].contains(item.role ?? "") {
-            let text = (item.value ?? item.title)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let text, !text.isEmpty, !controls.contains(text), text != messages.last else { continue }
-            messages.append(text)
-        }
+        let transcript = try locate("transcript", in: elements)
+        let inTranscript = ElementTree.descendants(of: transcript, in: elements)
+        let messages: [String] = inTranscript
+            .filter { $0.subrole == "AXDocumentArticle" }
+            .compactMap { article in
+                let body = ElementTree.descendants(of: article, in: elements)
+                    .filter { $0.role == "AXStaticText" }
+                    .compactMap { $0.value?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+                guard !body.isEmpty else { return nil }
+                // The article title carries sender and timestamp; keeping it makes a
+                // transcript readable without a second lookup.
+                return [article.title, body].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            }
         return Array(messages.suffix(limit))
     }
 
@@ -143,11 +195,11 @@ public final class GrokBotAdapter: AppAdapter {
         guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MacControlError.invalidArgument("prompt must not be empty") }
         let selector = selectors.first { $0.name == "prompt" }!
         guard let field = try resolve(selector, using: ax, limit: 1).first else { throw MacControlError.elementNotFound("GrokBot.prompt") }
-        let before = try readConversation(limit: 200).filter { $0 == prompt }.count
+        let before = try readConversation(limit: 200).filter { $0.contains(prompt) }.count
         try ax.submitText(handle: field.handle, value: prompt)
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            let count = try readConversation(limit: 200).filter { $0 == prompt }.count - before
+            let count = try readConversation(limit: 200).filter { $0.contains(prompt) }.count - before
             if count == 1 { return }
             if count > 1 { throw MacControlError.unavailable("Prompt appeared more than once; refusing to retry.") }
             // Each poll is a full bounded AX traversal, so it is deliberately unhurried.
@@ -191,14 +243,6 @@ public final class GrokBotAdapter: AppAdapter {
             throw MacControlError.invalidArgument("A handover pointer must be a repo-relative .md path. This bridge carries a pointer only; the handover itself, and any approval, must travel through the repository.")
         }
         try await sendPrompt("HANDOVER: read \(path) and follow PROTOCOL.md")
-    }
-
-    private func pressExactButton(title: String, purpose: String) throws {
-        let candidates = try ax.find(bundleID: bundleID, query: .init(role: "AXButton", title: title), limit: 5)
-        guard candidates.count == 1, let button = candidates.first else {
-            throw MacControlError.elementNotFound("exact \(purpose) button named \(title); found \(candidates.count)")
-        }
-        try ax.perform(handle: button.handle, action: kAXPressAction)
     }
 
     private func listRoutines() throws -> [String] {
