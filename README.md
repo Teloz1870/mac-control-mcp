@@ -92,7 +92,7 @@ Known limitations on 0.29.x, all found by using the adapter rather than reading 
 
 - The sidebar publishes `AXPress` on each conversation row and ignores it. `grokbot_open_bot` presses, confirms against the window's own title, and fails with that fact rather than reporting a switch that did not happen. There is no coordinate fallback.
 - Web-backed fields accept an Accessibility write and can discard it, and they update their reported value and focus on the next render rather than on the call. `mac_set_value` and `submitText` wait for the app to answer and fail when the value did not survive.
-- The Accessibility grant is bound to the binary, so reinstalling drops it and the entry must be removed and re-added in System Settings before the tools work again. `scripts/ship.sh` signs with a stable ad-hoc identifier, which was an attempt to keep the grant across rebuilds; measured over a day of reinstalls it does not reliably do so. A Developer ID is the fix, and until then expect to re-grant after every install.
+- The Accessibility grant is bound to the binary and drops when it is replaced, so the entry must be removed and re-added in System Settings after each install. This is deliberate. TCC keys on the code signature's designated requirement, and an ad-hoc signature's requirement is the binary's own hash, so every build is a new identity. A signing certificate would move that requirement to a stable identity and keep the grant — and would then extend it to anything else signed with the same key, which sits in the login keychain. The re-grant is the only thing forcing a human decision at that boundary, so it is kept. See `handovers/2026-08-29-owner-decision-self-signed-certificate.md`.
 
 ## License
 

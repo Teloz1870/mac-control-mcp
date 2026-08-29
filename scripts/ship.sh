@@ -55,8 +55,13 @@ else
         codesign --force --options runtime --timestamp --sign "$identity" "$binary"
         printf 'signed with: %s\n' "$identity"
     else
+        # The identifier is cosmetic here and does not keep the Accessibility grant: an
+        # ad-hoc signature's designated requirement is the binary's own cdhash, which
+        # changes on every build whatever the identifier says. Only a certificate moves
+        # that requirement to a stable identity, and the owner declined one on purpose —
+        # see handovers/2026-08-29-owner-decision-self-signed-certificate.md.
         codesign --force --sign - --identifier dk.hegnsfabrikken.mac-control-mcp "$binary"
-        printf 'signed ad-hoc (no Developer ID on this machine)\n'
+        printf 'signed ad-hoc — the grant will drop; re-granting is the intended cost\n'
     fi
 fi
 printf 'installed: %s (%s)\n' "$binary" "$("$binary" version)"
