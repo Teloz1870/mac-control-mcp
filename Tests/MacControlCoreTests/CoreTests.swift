@@ -65,6 +65,39 @@ private func element(role: String = "AXButton", identifier: String? = nil, title
     #expect(!ValueWritePolicy.kept(written: "ny dansk tekst", readback: "the old English text"))
     #expect(!ValueWritePolicy.kept(written: "hello", readback: nil))
     #expect(!ValueWritePolicy.kept(written: "hello", readback: ""))
+    // Clearing a field is a real write: it succeeded when nothing came back.
+    #expect(ValueWritePolicy.kept(written: "", readback: ""))
+    #expect(!ValueWritePolicy.kept(written: "", readback: "leftovers"))
+    // A long value can return truncated, so only the compared prefix must survive —
+    // but a revert replaces the opening characters too and still fails.
+    let long = String(repeating: "a", count: 400) + "TAIL"
+    #expect(ValueWritePolicy.kept(written: long, readback: String(long.prefix(200))))
+    #expect(!ValueWritePolicy.kept(written: long, readback: "something else entirely"))
+}
+
+@Test func valuesMayOnlyBeWrittenToTextBearingRoles() throws {
+    // Settability is not permission. A slider, a checkbox and a row all accept a value
+    // and mean something other than text by it.
+    #expect(SafetyPolicy.permitsWriting(role: "AXTextArea"))
+    #expect(SafetyPolicy.permitsWriting(role: "AXTextField"))
+    #expect(!SafetyPolicy.permitsWriting(role: "AXSlider"))
+    #expect(!SafetyPolicy.permitsWriting(role: "AXCheckBox"))
+    #expect(!SafetyPolicy.permitsWriting(role: nil))
+    #expect(throws: MacControlError.self) {
+        try SafetyPolicy.validateWritable(role: "AXSlider", subrole: nil, identifier: nil, title: nil, description: nil)
+    }
+    // The secure check still comes first, and still wins.
+    #expect(throws: MacControlError.self) {
+        try SafetyPolicy.validateWritable(role: "AXTextField", subrole: nil, identifier: "password", title: nil, description: nil)
+    }
+    try SafetyPolicy.validateWritable(role: "AXTextArea", subrole: nil, identifier: "prompt-input", title: nil, description: "Prompt")
+}
+
+@Test func selectorResolutionFailsOnAmbiguityRatherThanPickingAWinner() {
+    #expect(SelectorResolution.of(matchCount: 0) == .none)
+    #expect(SelectorResolution.of(matchCount: 1) == .resolved)
+    #expect(SelectorResolution.of(matchCount: 2) == .ambiguous(2))
+    #expect(SelectorResolution.of(matchCount: 17) == .ambiguous(17))
 }
 
 @Test func unknownPositionIsNeverAContainer() {

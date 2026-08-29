@@ -145,7 +145,7 @@ public final class AXController {
         guard error == .success else { throw MacControlError.accessibility(operation: action, code: error.rawValue) }
     }
 
-    public func setValue(handle: ElementHandle, value: String) throws {
+    public func setValue(handle: ElementHandle, value: String) async throws {
         let (element, locator) = try resolve(handle)
         let current = snapshot(element, handle: handle.rawValue, locator: locator, depth: locator.path.count)
         try SafetyPolicy.validateWritable(role: current.role, subrole: current.subrole, identifier: current.identifier, title: current.title, description: current.description)
@@ -163,16 +163,23 @@ public final class AXController {
         // typically by appending a newline. Demanding an exact match rejects writes that
         // plainly worked, which is the same failure this check exists to prevent, only
         // pointing the other way.
-        guard ValueWritePolicy.kept(written: value, readback: stringAttribute(element, kAXValueAttribute)) else {
-            throw MacControlError.unavailable("The element accepted the value and did not keep it. This is common in web-backed fields, which ignore an Accessibility write that arrives without the input event their framework expects. The value was not saved.")
+        //
+        // And the readback is given time. A web-backed field updates its Accessibility
+        // value on the next render, not on the write, so reading immediately reports the
+        // previous contents — checking too early is as wrong as not checking at all.
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline {
+            if ValueWritePolicy.kept(written: value, readback: stringAttribute(element, kAXValueAttribute)) { return }
+            try await Task.sleep(for: .milliseconds(100))
         }
+        throw MacControlError.unavailable("The element accepted the value and did not keep it within 1.5s. This is common in web-backed fields, which ignore an Accessibility write that arrives without the input event their framework expects. The value was not saved.")
     }
 
-    public func submitText(handle: ElementHandle, value: String) throws {
+    public func submitText(handle: ElementHandle, value: String) async throws {
         let (element, locator) = try resolve(handle)
         let current = snapshot(element, handle: handle.rawValue, locator: locator, depth: locator.path.count)
         try SafetyPolicy.validateWritable(role: current.role, subrole: current.subrole, identifier: current.identifier, title: current.title, description: current.description)
-        try setValue(handle: handle, value: value)
+        try await setValue(handle: handle, value: value)
         let focusResult = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         if actionNames(element).contains(kAXConfirmAction) {
             let result = AXUIElementPerformAction(element, kAXConfirmAction as CFString)
@@ -195,12 +202,21 @@ public final class AXController {
         // press is scoped to this one revalidated element — unlike the Return below, it
         // cannot land somewhere else. So the requirement is unchanged: the element must
         // hold focus before any key is sent. This only makes a legitimate attempt to
-        // satisfy it before giving up.
-        if boolAttribute(element, kAXFocusedAttribute) != true, actionNames(element).contains(kAXPressAction) {
-            _ = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        // satisfy it before giving up, and then waits for the answer: focus, like value,
+        // lands on the app's next render rather than on the call.
+        var pressedToFocus = false
+        if try await !holdsFocus(element, within: 0.3),
+           actionNames(element).contains(kAXPressAction) {
+            pressedToFocus = AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
         }
-        guard boolAttribute(element, kAXFocusedAttribute) == true else {
-            throw MacControlError.unavailable("Element does not hold keyboard focus, so a Return key event could reach a different field in the same app. Refusing to send it.")
+        guard try await holdsFocus(element, within: 1.5) else {
+            // The press already happened and cannot be taken back. Saying so matters:
+            // the caller is being told the operation failed, and is entitled to know
+            // that the app was nonetheless touched on the way there.
+            let sideEffect = pressedToFocus
+                ? " The element was pressed in an attempt to focus it; that press has already taken effect."
+                : ""
+            throw MacControlError.unavailable("Element does not hold keyboard focus, so a Return key event could reach a different field in the same app. Refusing to send it.\(sideEffect)")
         }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
@@ -256,6 +272,16 @@ public final class AXController {
             closeMenus(opened)
             throw error
         }
+    }
+
+    /// Whether the element reports keyboard focus, allowing for the app to render first.
+    private func holdsFocus(_ element: AXUIElement, within seconds: TimeInterval) async throws -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if boolAttribute(element, kAXFocusedAttribute) == true { return true }
+            try await Task.sleep(for: .milliseconds(100))
+        } while Date() < deadline
+        return false
     }
 
     private func closeMenus(_ opened: [AXUIElement]) {

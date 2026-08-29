@@ -96,11 +96,35 @@ public struct ElementSnapshot: Codable, Sendable, Equatable {
 }
 
 public enum ValueWritePolicy {
+    /// How much of a written value is compared on readback. Long values can come back
+    /// truncated by the app, so the whole string is not reliably checkable; a revert
+    /// replaces the text outright and still fails on the opening characters.
+    public static let comparedPrefix = 120
+
     /// Whether a field kept what was written to it. Containment rather than equality:
     /// a field that keeps the text may normalise it, typically by appending a newline.
-    /// A revert puts different text back entirely, which containment still catches.
     public static func kept(written: String, readback: String?) -> Bool {
-        (readback ?? "").contains(written)
+        let readback = readback ?? ""
+        if written.isEmpty { return readback.isEmpty }
+        return readback.contains(String(written.prefix(comparedPrefix)))
+    }
+}
+
+/// How a selector's match count is judged. Extracted so the rule can be tested without
+/// a Mac, and so every caller applies the same one.
+public enum SelectorResolution: Equatable {
+    case none
+    case resolved
+    case ambiguous(Int)
+
+    /// Exactly one match resolves. None moves on to the next candidate. More than one is
+    /// ambiguous and must fail: taking the first silently picks a winner nobody chose.
+    public static func of(matchCount: Int) -> SelectorResolution {
+        switch matchCount {
+        case ..<0, 0: .none
+        case 1: .resolved
+        default: .ambiguous(matchCount)
+        }
     }
 }
 

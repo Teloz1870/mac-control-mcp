@@ -122,13 +122,14 @@ public final class GrokBotAdapter: AppAdapter {
         }
         for candidate in selector.candidates {
             let matches = elements.filter { SemanticMatcher.matches($0, query: candidate) }
-            if matches.isEmpty { continue }
-            // A selector that matches more than one element is not a selector. Taking the
-            // first would silently pick a winner the caller never chose.
-            guard matches.count == 1, let match = matches.first else {
-                throw MacControlError.elementNotFound("\(Self.identifier).\(name) is ambiguous: \(matches.count) elements match. Run mac_scan_capabilities and tighten the selector.")
+            switch SelectorResolution.of(matchCount: matches.count) {
+            case .none:
+                continue
+            case .resolved:
+                return matches[0]
+            case .ambiguous(let count):
+                throw MacControlError.elementNotFound("\(Self.identifier).\(name) is ambiguous: \(count) elements match. Run mac_scan_capabilities and tighten the selector.")
             }
-            return match
         }
         throw MacControlError.elementNotFound("\(Self.identifier).\(name); tested \(selector.candidates.count) selectors. Run mac_scan_capabilities and update the adapter.")
     }
@@ -206,7 +207,7 @@ public final class GrokBotAdapter: AppAdapter {
         let selector = selectors.first { $0.name == "prompt" }!
         guard let field = try resolve(selector, using: ax, limit: 1).first else { throw MacControlError.elementNotFound("GrokBot.prompt") }
         let before = try readConversation(limit: 200).filter { $0.contains(prompt) }.count
-        try ax.submitText(handle: field.handle, value: prompt)
+        try await ax.submitText(handle: field.handle, value: prompt)
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
             let count = try readConversation(limit: 200).filter { $0.contains(prompt) }.count - before

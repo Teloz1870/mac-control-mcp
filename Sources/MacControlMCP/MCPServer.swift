@@ -48,7 +48,7 @@ final class ToolService {
                 try ax.perform(handle: .init(try requiredString("handle", arguments)), action: try requiredString("action", arguments))
                 result = #"{"performed":true}"#
             case "mac_set_value":
-                try ax.setValue(handle: .init(try requiredString("handle", arguments)), value: try requiredString("value", arguments))
+                try await ax.setValue(handle: .init(try requiredString("handle", arguments)), value: try requiredString("value", arguments))
                 result = #"{"set":true}"#
             case "mac_press_menu_item":
                 let bundle = try requiredString("bundle_id", arguments)
