@@ -101,12 +101,20 @@ public enum ValueWritePolicy {
     /// replaces the text outright and still fails on the opening characters.
     public static let comparedPrefix = 120
 
-    /// Whether a field kept what was written to it. Containment rather than equality:
-    /// a field that keeps the text may normalise it, typically by appending a newline.
+    /// Whether a field kept what was written to it.
+    ///
+    /// The comparison is on leading characters, not containment. Containment passes when
+    /// the text merely appears somewhere in the field, so a write of "hello" would count
+    /// as kept against an untouched field already reading "say hello to the user" — the
+    /// exact silent no-op this check exists to catch. Comparing from the start still
+    /// tolerates the two ways a field that did keep the text may report it differently:
+    /// appending to it, and truncating it.
     public static func kept(written: String, readback: String?) -> Bool {
         let readback = readback ?? ""
         if written.isEmpty { return readback.isEmpty }
-        return readback.contains(String(written.prefix(comparedPrefix)))
+        let probe = min(comparedPrefix, written.count, readback.count)
+        guard probe > 0 else { return false }
+        return written.prefix(probe) == readback.prefix(probe)
     }
 }
 

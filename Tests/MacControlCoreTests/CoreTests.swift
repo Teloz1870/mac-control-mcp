@@ -73,6 +73,12 @@ private func element(role: String = "AXButton", identifier: String? = nil, title
     let long = String(repeating: "a", count: 400) + "TAIL"
     #expect(ValueWritePolicy.kept(written: long, readback: String(long.prefix(200))))
     #expect(!ValueWritePolicy.kept(written: long, readback: "something else entirely"))
+    // Refuted by HF Code Peer in r6: containment passed when the text merely appeared
+    // somewhere in an untouched field, which is the silent no-op this check is for.
+    #expect(!ValueWritePolicy.kept(written: "hello", readback: "say hello to the user"))
+    #expect(!ValueWritePolicy.kept(written: "prompt", readback: "the old prompt text"))
+    // A field shorter than what was written kept nothing worth calling a write.
+    #expect(!ValueWritePolicy.kept(written: "hello", readback: "he"))
 }
 
 @Test func valuesMayOnlyBeWrittenToTextBearingRoles() throws {

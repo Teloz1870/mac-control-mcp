@@ -36,6 +36,7 @@ struct SelfTest {
         check(ValueWritePolicy.kept(written: "hello", readback: "hello\n"), "normalised write counts as kept")
         check(!ValueWritePolicy.kept(written: "ny tekst", readback: "gammel tekst"), "reverted write is caught")
         check(ValueWritePolicy.kept(written: "", readback: ""), "clearing a field counts as kept")
+        check(!ValueWritePolicy.kept(written: "hello", readback: "say hello to the user"), "text merely present is not a kept write")
         check(SafetyPolicy.permitsWriting(role: "AXTextArea"), "text area is writable")
         check(!SafetyPolicy.permitsWriting(role: "AXSlider"), "slider is not writable")
         check(SelectorResolution.of(matchCount: 1) == .resolved, "one match resolves")
@@ -50,7 +51,7 @@ struct SelfTest {
         check(diff.roles.added == ["AXTextField"] && diff.actions.removed == ["AXPress"], "capability diff")
 
         if failures.isEmpty {
-            print("24 core self-tests passed.")
+            print("25 core self-tests passed.")
         } else {
             for failure in failures { FileHandle.standardError.write(Data("FAIL: \(failure)\n".utf8)) }
             Foundation.exit(EXIT_FAILURE)

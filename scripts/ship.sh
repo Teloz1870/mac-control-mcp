@@ -1,7 +1,8 @@
 #!/bin/sh
 # Build, verify, install and publish in one step.
 #
-#   ./scripts/ship.sh "commit message"
+#   ./scripts/ship.sh "commit message"              stages the whole working tree
+#   ./scripts/ship.sh "commit message" path...      stages only those paths
 #
 # Stops at the first failure, so a red build never reaches the binary you are about
 # to run or the branch anyone else is reading.
@@ -35,8 +36,22 @@ printf 'installed: %s (%s)\n' \
     "$("$HOME/.local/bin/mac-control-mcp" version)"
 
 printf '\n=== publish ===\n'
+# Staging everything is how another lane's work gets swept into your commit and pushed
+# in the same step, which PROTOCOL.md §2 exists to prevent. The set is printed before
+# it is staged, so a sweep is at least never silent; pass explicit paths after the
+# message to stage only those.
 if [ -n "$(git status --porcelain)" ]; then
-    git add -A
+    shift
+    if [ $# -gt 0 ]; then
+        printf 'staging named paths only:\n'
+        for path in "$@"; do printf '  %s\n' "$path"; done
+        git add -- "$@"
+    else
+        printf 'staging every change in the working tree:\n'
+        git status --short | sed 's/^/  /'
+        printf 'If any of that belongs to another lane, stop now and stage by path instead.\n'
+        git add -A
+    fi
     git commit -m "$1"
 else
     printf 'nothing to commit\n'
