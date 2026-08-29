@@ -179,6 +179,14 @@ public final class AXController {
         // a field that was already focused can return a non-success set and still be the
         // right target. The readback is the authority; the setter's result is a hint.
         _ = focusResult
+        // Setting AXFocused does not take in every app. Pressing the element does, and a
+        // press is scoped to this one revalidated element — unlike the Return below, it
+        // cannot land somewhere else. So the requirement is unchanged: the element must
+        // hold focus before any key is sent. This only makes a legitimate attempt to
+        // satisfy it before giving up.
+        if boolAttribute(element, kAXFocusedAttribute) != true, actionNames(element).contains(kAXPressAction) {
+            _ = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        }
         guard boolAttribute(element, kAXFocusedAttribute) == true else {
             throw MacControlError.unavailable("Element does not hold keyboard focus, so a Return key event could reach a different field in the same app. Refusing to send it.")
         }

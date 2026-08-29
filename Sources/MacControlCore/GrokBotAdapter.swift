@@ -27,15 +27,9 @@ public final class GrokBotAdapter: AppAdapter {
             ]),
             .init(name: "bot-list", candidates: [
                 .init(role: "AXGroup", description: "Bot list"),
-                .init(role: "AXGroup", description: "Bots"),
             ]),
             .init(name: "transcript", candidates: [
                 .init(role: "AXGroup", description: "Conversation transcript"),
-            ]),
-            .init(name: "question-widget", candidates: [
-                .init(role: "AXGroup", identifier: "question-widget"),
-                .init(role: "AXGroup", identifier: "question"),
-                .init(role: "AXGroup", description: "Question"),
             ]),
         ]
     }
@@ -127,46 +121,43 @@ public final class GrokBotAdapter: AppAdapter {
             throw MacControlError.invalidArgument("No selector named \(name)")
         }
         for candidate in selector.candidates {
-            if let match = elements.first(where: { SemanticMatcher.matches($0, query: candidate) }) { return match }
+            let matches = elements.filter { SemanticMatcher.matches($0, query: candidate) }
+            if matches.isEmpty { continue }
+            // A selector that matches more than one element is not a selector. Taking the
+            // first would silently pick a winner the caller never chose.
+            guard matches.count == 1, let match = matches.first else {
+                throw MacControlError.elementNotFound("\(Self.identifier).\(name) is ambiguous: \(matches.count) elements match. Run mac_scan_capabilities and tighten the selector.")
+            }
+            return match
         }
         throw MacControlError.elementNotFound("\(Self.identifier).\(name); tested \(selector.candidates.count) selectors. Run mac_scan_capabilities and update the adapter.")
     }
 
-    /// Rows of the sidebar's bot list. Anchored on the app's own "Bot list" landmark;
-    /// structure is used only inside that landmark, never to find it.
-    private func botRows(in elements: [ElementSnapshot]) throws -> [(row: ElementSnapshot, name: String)] {
+    /// The sidebar's bot entries. Grok Bot gives each row a button whose Accessibility
+    /// description is the bot's name, so the name and the thing you press are the same
+    /// element — no reading a label out of one node and pressing another.
+    private func botButtons(in elements: [ElementSnapshot]) throws -> [ElementSnapshot] {
         let list = try locate("bot-list", in: elements)
-        let inList = ElementTree.descendants(of: list, in: elements)
-        guard let content = inList.first(where: { $0.role == "AXList" }) else {
-            throw MacControlError.elementNotFound("\(Self.identifier).bot-list contains no AXList")
+        return ElementTree.descendants(of: list, in: elements).filter {
+            $0.role == "AXButton"
+                && $0.actions.contains(kAXPressAction)
+                && !($0.description ?? "").isEmpty
         }
-        return inList
-            .filter { $0.path.count == content.path.count + 1 && ElementTree.isDescendant($0, of: content) }
-            .compactMap { row in
-                guard let name = ElementTree.descendants(of: row, in: elements)
-                    .first(where: { $0.role == "AXStaticText" })?
-                    .value?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
-                return (row, name)
-            }
     }
 
     private func listBots() throws -> [String] {
-        try botRows(in: try fullTree()).map(\.name)
+        try botButtons(in: try fullTree()).compactMap(\.description)
     }
 
     private func openBot(name: String) throws {
         let elements = try fullTree()
-        let matches = try botRows(in: elements).filter { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
-        guard matches.count == 1, let row = matches.first?.row else {
+        let matches = try botButtons(in: elements).filter {
+            $0.description?.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }
+        guard matches.count == 1, let button = matches.first else {
             throw MacControlError.elementNotFound("exactly one bot named \(name) in the sidebar; found \(matches.count)")
         }
-        // The row itself is a plain group; the clickable element sits inside it. Take the
-        // first descendant that actually exposes a press rather than assuming a role.
-        guard let target = ElementTree.descendants(of: row, in: elements).first(where: { $0.actions.contains(kAXPressAction) })
-            ?? (row.actions.contains(kAXPressAction) ? row : nil) else {
-            throw MacControlError.elementNotFound("a pressable element inside the row for bot \(name)")
-        }
-        try ax.perform(handle: target.handle, action: kAXPressAction)
+        try ax.perform(handle: button.handle, action: kAXPressAction)
     }
 
     /// Reads the transcript only. Scoping matters: an app-wide sweep of static text also
@@ -212,17 +203,19 @@ public final class GrokBotAdapter: AppAdapter {
     /// an app-wide title match could press an unrelated control that happens to carry
     /// the same label (an answer "Send" would otherwise hit the composer's Send button).
     private func answerQuestion(_ answer: String) throws {
-        guard let widget = try resolve(selectors.first { $0.name == "question-widget" }!, using: ax, limit: 2).first else {
-            throw MacControlError.elementNotFound("GrokBot.question-widget; refusing an app-wide press for answer \(answer)")
-        }
         let elements = try fullTree()
-        let candidates = ElementTree.descendants(of: widget, in: elements).filter {
+        // Scoped to the transcript, so an identically labelled control in the sidebar or
+        // the settings panel can never be pressed instead. Requiring a single match also
+        // means an older question offering the same answer stops the press rather than
+        // letting it land on the wrong round.
+        let transcript = try locate("transcript", in: elements)
+        let candidates = ElementTree.descendants(of: transcript, in: elements).filter {
             $0.role == "AXButton"
                 && $0.title?.localizedCaseInsensitiveCompare(answer) == .orderedSame
                 && $0.actions.contains(kAXPressAction)
         }
         guard candidates.count == 1, let button = candidates.first else {
-            throw MacControlError.elementNotFound("exactly one answer button named \(answer) inside the question widget; found \(candidates.count)")
+            throw MacControlError.elementNotFound("exactly one answer button titled \(answer) in the conversation transcript; found \(candidates.count)")
         }
         try ax.perform(handle: button.handle, action: kAXPressAction)
     }

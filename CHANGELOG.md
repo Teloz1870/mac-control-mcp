@@ -6,6 +6,13 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ### Fixed
 
+Found by driving the adapter through a real session, and by peer review of r3:
+
+- `grokbot_list_bots` and `grokbot_open_bot` now use the button Grok Bot already labels with each bot's name, so the name read and the element pressed are the same node. The previous version read a label from one node and pressed a guessed sibling: it reported success while switching nothing.
+- `grokbot_answer_question` is scoped to the conversation transcript and matches the answer's `AXTitle`. The answers are plain buttons carrying their text as a title, not a widget with an identifier — the guessed `question-widget` selector could never resolve, so the tool always failed closed.
+- Selector resolution requires a single match. Taking the first of several silently picks a winner the caller never chose. The `Bots` fallback for the bot list is gone: it could never win over `Bot list`, so it claimed a fallback that did not exist.
+- `submitText` presses the element to obtain focus when setting `AXFocused` does not take. The requirement is unchanged — the element must hold focus before a key is sent — but a press is scoped to one revalidated element and cannot land elsewhere, unlike the Return it guards.
+
 Found by running the adapter against Grok Bot 0.29 for the first time:
 
 - The scan depth of 12 stopped above everything that matters. Grok Bot derives its Accessibility tree from the DOM, so its sidebar sits past depth 18 — `grokbot_list_bots` returned an empty list rather than an error, which reads as "no bots" instead of "I did not look far enough". Default depth is now 30 and 8000 nodes, and the adapter uses the configuration instead of six hardcoded limits.
