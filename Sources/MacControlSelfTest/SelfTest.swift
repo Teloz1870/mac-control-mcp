@@ -42,6 +42,9 @@ struct SelfTest {
         check(!ValueWritePolicy.kept(written: "ny tekst", readback: "gammel tekst"), "reverted write is caught")
         check(ValueWritePolicy.kept(written: "", readback: ""), "clearing a field counts as kept")
         check(!ValueWritePolicy.kept(written: "hello", readback: "say hello to the user"), "text merely present is not a kept write")
+        check(!ValueWritePolicy.kept(written: "hello", readback: "he"), "a short readback is not a kept write")
+        check(ValueWritePolicy.kept(written: String(repeating: "a", count: 400),
+                                    readback: String(repeating: "a", count: 200)), "a truncated readback is a kept write")
         check(SafetyPolicy.permitsWriting(role: "AXTextArea"), "text area is writable")
         check(!SafetyPolicy.permitsWriting(role: "AXSlider"), "slider is not writable")
         check(SelectorResolution.of(matchCount: 1) == .resolved, "one match resolves")

@@ -112,8 +112,12 @@ public enum ValueWritePolicy {
     public static func kept(written: String, readback: String?) -> Bool {
         let readback = readback ?? ""
         if written.isEmpty { return readback.isEmpty }
-        let probe = min(comparedPrefix, written.count, readback.count)
-        guard probe > 0 else { return false }
+        // Compare a fixed span of the write, and require the field to have kept at least
+        // that much. Letting the span shrink to the readback's length made any short
+        // prefix count as a kept write — "he" passed for "hello" — which is a field that
+        // dropped the text reading as one that stored it.
+        let probe = min(comparedPrefix, written.count)
+        guard readback.count >= probe else { return false }
         return written.prefix(probe) == readback.prefix(probe)
     }
 }
