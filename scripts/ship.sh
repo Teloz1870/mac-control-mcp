@@ -30,13 +30,22 @@ printf '\n=== security ===\n'
 
 printf '\n=== install ===\n'
 ./scripts/install.sh >/dev/null
-# A stable identifier gives macOS something to keep the Accessibility grant against.
-# Without it every rebuild is a new identity and the permission drops silently.
-codesign --force --sign - --identifier dk.hegnsfabrikken.mac-control-mcp \
-    "$HOME/.local/bin/mac-control-mcp"
-printf 'installed: %s (%s)\n' \
-    "$HOME/.local/bin/mac-control-mcp" \
-    "$("$HOME/.local/bin/mac-control-mcp" version)"
+binary="$HOME/.local/bin/mac-control-mcp"
+
+# macOS binds the Accessibility grant to the code signature. A Developer ID is a stable
+# identity, so the grant survives a rebuild; an ad-hoc signature is not, and re-granting
+# after every install is the price. Measured over a day of reinstalls, the ad-hoc
+# identifier below did not reliably keep the grant — it is a fallback, not a fix.
+identity=$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Developer ID Application/ { print $2; exit }')
+if [ -n "$identity" ]; then
+    codesign --force --options runtime --timestamp --sign "$identity" "$binary"
+    printf 'signed with: %s\n' "$identity"
+else
+    codesign --force --sign - --identifier dk.hegnsfabrikken.mac-control-mcp "$binary"
+    printf 'signed ad-hoc (no Developer ID found) — expect to re-grant Accessibility\n'
+fi
+printf 'installed: %s (%s)\n' "$binary" "$("$binary" version)"
 
 printf '\n=== publish ===\n'
 # Staging everything is how another lane's work gets swept into your commit and pushed
@@ -64,6 +73,11 @@ printf 'pushed: %s\n' "$(git rev-parse --short HEAD)"
 
 printf '\n=== next ===\n'
 printf 'Restart Claude (Cmd+Q, reopen) so the MCP server picks up this binary.\n'
-printf 'If tools report "Accessibility permission is not granted", remove and re-add\n'
-printf '  %s\n' "$HOME/.local/bin/mac-control-mcp"
-printf 'in System Settings > Privacy & Security > Accessibility.\n'
+if [ -z "$identity" ]; then
+    printf 'Ad-hoc signed, so the Accessibility grant will probably have dropped: remove\n'
+    printf 'and re-add %s in\n' "$binary"
+    printf 'System Settings > Privacy & Security > Accessibility.\n'
+else
+    printf 'Developer ID signed. Re-grant Accessibility once after the first such build;\n'
+    printf 'it should hold across later ones.\n'
+fi
