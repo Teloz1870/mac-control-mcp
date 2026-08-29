@@ -208,7 +208,10 @@ public final class GrokBotAdapter: AppAdapter {
         guard let field = try resolve(selector, using: ax, limit: 1).first else { throw MacControlError.elementNotFound("GrokBot.prompt") }
         let before = try readConversation(limit: 200).filter { $0.contains(prompt) }.count
         try await ax.submitText(handle: field.handle, value: prompt)
-        let deadline = Date().addingTimeInterval(5)
+        // A long prompt takes longer to appear than a short one, so the window scales with
+        // it. Too short a wait reports a send that in fact succeeded, which is the same
+        // kind of false report this check exists to prevent.
+        let deadline = Date().addingTimeInterval(min(5 + Double(prompt.count) / 200, 20))
         while Date() < deadline {
             let count = try readConversation(limit: 200).filter { $0.contains(prompt) }.count - before
             if count == 1 { return }
