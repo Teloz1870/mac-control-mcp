@@ -70,6 +70,11 @@ final class ToolService {
                 let bundle = try requiredString("bundle_id", arguments)
                 let snapshot = try scanner.scan(bundleID: bundle, includeElectron: arguments["include_electron"]?.boolValue ?? true)
                 let url = try scanner.save(snapshot)
+                // The summary, not the tree. A full hierarchy runs to hundreds of
+                // thousands of characters and cannot be returned over this transport at
+                // all, so a tool that tried was unusable for its own purpose. The whole
+                // snapshot is on disk at the path below, which is what mac_diff_capabilities
+                // reads and what a human should open.
                 result = try JSONOutput.encode(ScanResult(snapshot: snapshot, savedTo: url.path), pretty: true)
             case "mac_diff_capabilities":
                 let old = try scanner.loadSnapshot(at: snapshotURL(try requiredString("from_snapshot", arguments)))
@@ -89,7 +94,40 @@ final class ToolService {
         }
     }
 
-    private struct ScanResult: Codable { let snapshot: CapabilitySnapshot; let savedTo: String }
+    /// What a scan returns over the wire: counts and the path, never the hierarchy.
+    private struct ScanResult: Codable {
+        let bundleID: String
+        let appVersion: String
+        let capturedAt: Date
+        let elements: Int
+        let roles: [String]
+        let actions: [String]
+        let windowTitles: [String]
+        let menuItems: Int
+        let attributes: Int
+        let electronPreloadNamespaces: [String]?
+        let electronURLSchemes: [String]?
+        let electronRPCMethods: Int?
+        let savedTo: String
+        let note: String
+
+        init(snapshot: CapabilitySnapshot, savedTo: String) {
+            bundleID = snapshot.bundleID
+            appVersion = snapshot.appVersion
+            capturedAt = snapshot.capturedAt
+            elements = snapshot.hierarchy.count
+            roles = snapshot.roles
+            actions = snapshot.actions
+            windowTitles = snapshot.windowTitles
+            menuItems = snapshot.menuItems.count
+            attributes = snapshot.attributes.count
+            electronPreloadNamespaces = snapshot.electron?.preloadNamespaces
+            electronURLSchemes = snapshot.electron?.urlSchemes
+            electronRPCMethods = snapshot.electron?.rpcMethodNames.count
+            self.savedTo = savedTo
+            note = "The full hierarchy is in the saved snapshot, not in this result. Pass its filename to mac_diff_capabilities, or open the file to read it."
+        }
+    }
 
     private var genericTools: [Tool] {
         [
@@ -101,7 +139,7 @@ final class ToolService {
             tool("mac_set_value", "Set a non-secure Accessibility value. Secure and secret-like fields are blocked.", readOnly: false, destructive: true, required: ["handle", "value"]),
             tool("mac_press_menu_item", "Press an exact visible menu item in an allowed app.", readOnly: false, destructive: true, required: ["bundle_id", "path"], arrays: ["path"]),
             tool("mac_wait_for", "Wait with AXObserver-backed checks for a semantic element condition.", readOnly: true, required: ["bundle_id"], optional: ["role", "identifier", "title", "description", "value_contains", "timeout_seconds"]),
-            tool("mac_scan_capabilities", "Scan live AX metadata and read-only Electron metadata, then save a redacted local snapshot.", readOnly: false, required: ["bundle_id"], optional: ["include_electron"]),
+            tool("mac_scan_capabilities", "Scan live AX metadata and read-only Electron metadata, then save a redacted local snapshot. Returns a summary and the snapshot's path; the hierarchy stays in the file, which is what mac_diff_capabilities reads.", readOnly: false, required: ["bundle_id"], optional: ["include_electron"]),
             tool("mac_diff_capabilities", "Compare two snapshots stored by mac-control-mcp in Application Support.", readOnly: true, required: ["from_snapshot", "to_snapshot"]),
         ]
     }
