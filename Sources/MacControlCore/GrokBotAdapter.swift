@@ -5,7 +5,7 @@ import Foundation
 public final class GrokBotAdapter: AppAdapter {
     public static let identifier = "grokbot"
     public let bundleID = "com.anysphere.sand"
-    public let supportedVersionDescription = "0.29.x"
+    public let supportedVersionDescription = "0.29.x and 0.30.x"
     private let ax: AXController
 
     public init(ax: AXController) { self.ax = ax }
@@ -60,9 +60,16 @@ public final class GrokBotAdapter: AppAdapter {
         }
     }
 
+    /// Versions the adapter's selectors have actually been checked against, one by one.
+    /// 0.30.0 was admitted after a capability diff against 0.29.0 and a direct check that
+    /// every landmark the adapter anchors on — "Bot list", "Conversation transcript",
+    /// "Prompt", and the per-row button carrying each bot's name — still resolved. A range
+    /// is not widened because an update looked harmless.
+    private nonisolated static let verifiedMinors: Set<String> = ["29", "30"]
+
     public nonisolated static func isSupported(version: String) -> Bool {
         let parts = version.split(separator: ".")
-        return parts.count >= 2 && parts[0] == "0" && parts[1] == "29"
+        return parts.count >= 2 && parts[0] == "0" && verifiedMinors.contains(String(parts[1]))
     }
 
     public func call(tool: String, arguments: [String: String]) async throws -> String {

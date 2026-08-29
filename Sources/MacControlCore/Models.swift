@@ -217,6 +217,10 @@ public struct CapabilityDiff: Codable, Sendable, Equatable {
     public let actions: ChangeSet
     public let menus: ChangeSet
     public let rpcMethods: ChangeSet
+    /// Accessibility descriptions present in one version and not the other. Adapters
+    /// anchor on these, so a diff without them answers every question except the one
+    /// that decides whether the adapter still works.
+    public let landmarks: ChangeSet
 }
 
 public enum JSONOutput {

@@ -4,6 +4,11 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Grok Bot 0.30.x is supported, admitted the way the range is meant to be widened: a capability diff against 0.29.0, then a direct check that every landmark the adapter anchors on still resolves. Supported minors are now an explicit set rather than a single hardcoded number, so admitting one is a deliberate act.
+- `mac_diff_capabilities` reports added and removed Accessibility descriptions. Roles, actions and menus say whether the app changed shape; the descriptions say whether an adapter's selectors still land, which is the question the diff exists to answer. It did not compare them until now.
+
 ### Fixed
 
 - The version gate read a cached version and so did not close. `Bundle(url:)` caches an app's Info.plist for the life of the process, so after Grok Bot updated in place every tool kept answering `0.29.0` and `compatible: true` while the app on disk was `0.30.0`. The one mechanism meant to stop the adapter running against an unverified version was reporting a number that could no longer change. Versions are now read from `Contents/Info.plist` on each call, in `mac_list_apps`, `grokbot_get_status` and the capability snapshot alike.

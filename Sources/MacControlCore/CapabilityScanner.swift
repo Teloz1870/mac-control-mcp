@@ -63,13 +63,23 @@ public final class CapabilityScanner {
             let left = Set(a), right = Set(b)
             return .init(added: Array(right.subtracting(left)).sorted(), removed: Array(left.subtracting(right)).sorted())
         }
+        // The descriptions adapters select on. Comparing roles and actions says whether the
+        // app changed shape; comparing these says whether the selectors still land.
+        func landmarks(_ snapshot: CapabilitySnapshot) -> [String] {
+            Array(Set(snapshot.hierarchy.compactMap { element in
+                guard let description = element.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !description.isEmpty else { return nil }
+                return description
+            })).sorted()
+        }
         return CapabilityDiff(
             fromVersion: old.appVersion, toVersion: new.appVersion,
             roles: changes(old.roles, new.roles),
             attributes: changes(old.attributes, new.attributes),
             actions: changes(old.actions, new.actions),
             menus: changes(old.menuItems, new.menuItems),
-            rpcMethods: changes(old.electron?.rpcMethodNames ?? [], new.electron?.rpcMethodNames ?? [])
+            rpcMethods: changes(old.electron?.rpcMethodNames ?? [], new.electron?.rpcMethodNames ?? []),
+            landmarks: changes(landmarks(old), landmarks(new))
         )
     }
 }

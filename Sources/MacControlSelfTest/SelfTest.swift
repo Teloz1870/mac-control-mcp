@@ -19,7 +19,8 @@ struct SelfTest {
         check(SafetyPolicy.redact("hunter2", role: "AXSecureTextField") == "[REDACTED]", "secure field redaction")
         check(SafetyPolicy.redact("api_key=super-secret-value")?.contains("super-secret-value") == false, "inline secret redaction")
         check(GrokBotAdapter.isSupported(version: "0.29.0"), "supported Grok Bot version")
-        check(!GrokBotAdapter.isSupported(version: "0.30.0"), "unknown Grok Bot version gate")
+        check(GrokBotAdapter.isSupported(version: "0.30.0"), "verified Grok Bot version")
+        check(!GrokBotAdapter.isSupported(version: "0.31.0"), "unverified Grok Bot version gate")
         check(MacControlConfiguration.default.allowedBundleIDs == ["com.anysphere.sand"], "default allowlist")
         let now = Date()
         check(!HandleLeasePolicy.isValid(expiresAt: now.addingTimeInterval(-1), locatorGeneration: 1, currentGeneration: 1, now: now), "expired handle invalidation")
@@ -51,7 +52,7 @@ struct SelfTest {
         check(diff.roles.added == ["AXTextField"] && diff.actions.removed == ["AXPress"], "capability diff")
 
         if failures.isEmpty {
-            print("25 core self-tests passed.")
+            print("26 core self-tests passed.")
         } else {
             for failure in failures { FileHandle.standardError.write(Data("FAIL: \(failure)\n".utf8)) }
             Foundation.exit(EXIT_FAILURE)

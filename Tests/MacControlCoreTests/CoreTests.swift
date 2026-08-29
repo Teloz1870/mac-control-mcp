@@ -22,10 +22,14 @@ private func element(role: String = "AXButton", identifier: String? = nil, title
     #expect(SafetyPolicy.isSensitive(role: "AXTextField", subrole: nil, identifier: "wallet-seed", title: nil, description: nil))
 }
 
-@Test func grokBotVersionGateStopsUnknownVersions() {
+@Test func grokBotVersionGateStopsUnverifiedVersions() {
+    // Each minor is admitted only after its landmarks have been checked, so the next
+    // one along is refused until someone does that work. 0.30 was added that way.
     #expect(GrokBotAdapter.isSupported(version: "0.29.0"))
     #expect(GrokBotAdapter.isSupported(version: "0.29.12"))
-    #expect(!GrokBotAdapter.isSupported(version: "0.30.0"))
+    #expect(GrokBotAdapter.isSupported(version: "0.30.0"))
+    #expect(!GrokBotAdapter.isSupported(version: "0.31.0"))
+    #expect(!GrokBotAdapter.isSupported(version: "1.0.0"))
     #expect(!GrokBotAdapter.isSupported(version: "unknown"))
 }
 
@@ -40,6 +44,27 @@ private func element(role: String = "AXButton", identifier: String? = nil, title
     )
     #expect(diff.roles.added == ["AXTextField"])
     #expect(diff.actions.removed == ["AXPress"])
+}
+
+@Test func capabilityDiffReportsTheLandmarksAdaptersSelectOn() {
+    func snapshot(version: String, descriptions: [String]) -> CapabilitySnapshot {
+        let hierarchy = descriptions.enumerated().map { index, description in
+            ElementSnapshot(handle: .init("h\(index)"), bundleID: "x", pid: 1, role: "AXGroup",
+                            subrole: nil, identifier: nil, title: nil, description: description,
+                            value: nil, enabled: true, actions: [], depth: 1, childCount: 0, path: [index])
+        }
+        return .init(schemaVersion: 2, bundleID: "x", appVersion: version, capturedAt: .distantPast,
+                     roles: [], attributes: [], actions: [], menuItems: [], windowTitles: [],
+                     hierarchy: hierarchy, electron: nil)
+    }
+    // Roles and actions can be identical across an update while the description an
+    // adapter anchors on quietly disappears. That is the change worth catching.
+    let diff = CapabilityScanner.diff(
+        snapshot(version: "0.29.0", descriptions: ["Bot list", "Prompt", "Conversation transcript"]),
+        snapshot(version: "0.31.0", descriptions: ["Prompt", "Conversation transcript", "Agent list"])
+    )
+    #expect(diff.landmarks.removed == ["Bot list"])
+    #expect(diff.landmarks.added == ["Agent list"])
 }
 
 @Test func defaultAllowlistContainsOnlyGrokBot() {
