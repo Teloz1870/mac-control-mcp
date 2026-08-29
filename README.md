@@ -16,7 +16,7 @@ The default allowlist contains only `com.anysphere.sand` (Grok Bot). Secure fiel
 
 ## Requirements
 
-- macOS 13 or newer
+- macOS 14 or newer
 - Swift 6
 - Accessibility permission for the installed binary or the terminal/Codex process launching a source build
 - Grok Bot 0.29.x for its specialized adapter

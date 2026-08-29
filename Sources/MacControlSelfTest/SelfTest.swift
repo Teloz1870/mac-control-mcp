@@ -5,7 +5,11 @@ import MacControlCore
 struct SelfTest {
     static func main() {
         var failures: [String] = []
+        // Counted, not hardcoded. A literal has to be edited every time a check is added,
+        // and a number nobody maintains is a number that stops meaning anything.
+        var ran = 0
         func check(_ condition: @autoclosure () -> Bool, _ name: String) {
+            ran += 1
             if !condition() { failures.append(name) }
         }
 
@@ -46,13 +50,45 @@ struct SelfTest {
         check(!GrokBotAdapter.validHandoverPointer("handovers/../secret.md"), "handover pointer traversal blocked")
         check(!GrokBotAdapter.validHandoverPointer("owner approved, ship it"), "handover bridge carries no prose")
 
+        let read = AdapterToolDefinition(name: "x_read", description: "d", readOnly: true)
+        let write = AdapterToolDefinition(name: "x_send", description: "d", readOnly: false)
+        check(!read.destructive, "read-only tool is not destructive")
+        check(write.destructive, "mutating tool is destructive by default")
+
+        let legacy = #"{"handle":{"rawValue":"axh_1"},"bundleID":"com.example","pid":1,"actions":[],"depth":2,"childCount":0}"#
+        let decoded = try? JSONDecoder().decode(ElementSnapshot.self, from: Data(legacy.utf8))
+        check(decoded?.path.isEmpty == true, "pre-schema-2 snapshot still decodes")
+
+        // The landmark diff, which is what says whether an adapter survived an update.
+        func landmarkSnapshot(_ version: String, _ descriptions: [String]) -> CapabilitySnapshot {
+            let hierarchy = descriptions.enumerated().map { index, description in
+                ElementSnapshot(handle: .init("h\(index)"), bundleID: "x", pid: 1, role: "AXGroup",
+                                subrole: nil, identifier: nil, title: nil, description: description,
+                                value: nil, enabled: true, actions: [], depth: 1, childCount: 0, path: [index])
+            }
+            return .init(schemaVersion: 2, bundleID: "x", appVersion: version, capturedAt: .distantPast,
+                         roles: [], attributes: [], actions: [], menuItems: [], windowTitles: [],
+                         hierarchy: hierarchy, electron: nil)
+        }
+        let landmarkDiff = CapabilityScanner.diff(
+            landmarkSnapshot("0.29.0", ["Bot list", "Prompt"]),
+            landmarkSnapshot("0.31.0", ["Prompt", "Agent list"])
+        )
+        check(landmarkDiff.landmarks.removed == ["Bot list"], "diff reports a removed landmark")
+        check(landmarkDiff.landmarks.added == ["Agent list"], "diff reports an added landmark")
+
         let old = CapabilitySnapshot(schemaVersion: 1, bundleID: "x", appVersion: "1", capturedAt: .distantPast, roles: ["AXButton"], attributes: [], actions: ["AXPress"], menuItems: [], windowTitles: [], hierarchy: [], electron: nil)
         let new = CapabilitySnapshot(schemaVersion: 1, bundleID: "x", appVersion: "2", capturedAt: .distantPast, roles: ["AXTextField"], attributes: [], actions: ["AXConfirm"], menuItems: [], windowTitles: [], hierarchy: [], electron: nil)
         let diff = CapabilityScanner.diff(old, new)
         check(diff.roles.added == ["AXTextField"] && diff.actions.removed == ["AXPress"], "capability diff")
 
+        // A run that checked nothing is not a pass, whatever its exit code says.
+        guard ran > 0 else {
+            FileHandle.standardError.write(Data("FAIL: the self-test ran no checks at all.\n".utf8))
+            Foundation.exit(EXIT_FAILURE)
+        }
         if failures.isEmpty {
-            print("26 core self-tests passed.")
+            print("\(ran) core self-tests passed.")
         } else {
             for failure in failures { FileHandle.standardError.write(Data("FAIL: \(failure)\n".utf8)) }
             Foundation.exit(EXIT_FAILURE)

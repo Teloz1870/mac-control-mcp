@@ -10,8 +10,15 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 - `grokbot_list_bots` and `grokbot_open_bot` take each bot's name from the row's own label rather than the row button's description. On 0.30 that description carries transient state — an unread row reads `HF Test Author, Unread activity` — so it identifies the row but is not the name, and matching on it would fail for exactly the bots that have something to say. Found by upgrading, not by the diff: a description that changes with unread state cannot be caught by comparing two snapshots.
 - `mac_diff_capabilities` reports added and removed Accessibility descriptions. Roles, actions and menus say whether the app changed shape; the descriptions say whether an adapter's selectors still land, which is the question the diff exists to answer. It did not compare them until now.
 
+### Changed
+
+- The minimum platform is macOS 14, raised from 13. The installed `Testing.framework` is built for 14, so a package targeting 13 linked the test bundle and executed nothing — every `@Test` in the suite had never run. Claiming 13 also claimed a platform the project had never been built or run on. README updated to match.
+
 ### Fixed
 
+- `./scripts/test.sh` runs the self-test first and treats it as the gate, then runs the swift-testing suite only where `xctest` exists. `xctest` ships with Xcode, not the Command Line Tools, so on a machine without Xcode `swift test` built the bundle, ran nothing and exited 0 — green while measuring nothing, for a whole day, on a repo whose release workflow treats it as a gate. Where the suite can run, a pass without a reported test run is now a failure. Everything the suite asserts is also asserted in the self-test, so no rule depends on a runner that may be absent.
+- `doctor` resolves every selector the adapter declares and reports each one as ok, ambiguous or failed. A capability diff says what moved in the app; it does not say whether the adapter's own selectors still land, and checking that by hand after each update is the step that eventually gets skipped.
+- The self-test counts its own checks instead of printing a hardcoded total, and fails if it ran none. The literal had to be edited by hand five times in one day, and a number nobody maintains stops meaning anything.
 - The version gate read a cached version and so did not close. `Bundle(url:)` caches an app's Info.plist for the life of the process, so after Grok Bot updated in place every tool kept answering `0.29.0` and `compatible: true` while the app on disk was `0.30.0`. The one mechanism meant to stop the adapter running against an unverified version was reporting a number that could no longer change. Versions are now read from `Contents/Info.plist` on each call, in `mac_list_apps`, `grokbot_get_status` and the capability snapshot alike.
 
 Found by driving the adapter through a real session, and by peer review of r3:

@@ -14,7 +14,11 @@ let testLinkerSettings: [LinkerSetting] = needsCommandLineToolsTestPaths ? [.uns
 
 let package = Package(
     name: "mac-control-mcp",
-    platforms: [.macOS(.v13)],
+    // macOS 14, not 13. The installed Testing.framework is built for 14, so a package
+    // targeting 13 links the test bundle and then runs nothing: `swift test` exited 0
+    // for a day while executing no tests at all. Claiming 13 also claimed something
+    // never built or run there. Raising it makes the suite real.
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "MacControlCore", targets: ["MacControlCore"]),
         .executable(name: "mac-control-mcp", targets: ["MacControlMCP"]),
