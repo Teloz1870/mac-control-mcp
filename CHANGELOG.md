@@ -6,6 +6,8 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ### Fixed
 
+- The version gate read a cached version and so did not close. `Bundle(url:)` caches an app's Info.plist for the life of the process, so after Grok Bot updated in place every tool kept answering `0.29.0` and `compatible: true` while the app on disk was `0.30.0`. The one mechanism meant to stop the adapter running against an unverified version was reporting a number that could no longer change. Versions are now read from `Contents/Info.plist` on each call, in `mac_list_apps`, `grokbot_get_status` and the capability snapshot alike.
+
 Found by driving the adapter through a real session, and by peer review of r3:
 
 - `grokbot_list_bots` and `grokbot_open_bot` now use the button Grok Bot already labels with each bot's name, so the name read and the element pressed are the same node. The previous version read a label from one node and pressed a guessed sibling.

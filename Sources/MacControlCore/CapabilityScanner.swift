@@ -8,8 +8,9 @@ public final class CapabilityScanner {
 
     public func scan(bundleID: String, includeElectron: Bool = true) throws -> CapabilitySnapshot {
         let appURL = try ax.appBundleURL(bundleID: bundleID)
-        let bundle = Bundle(url: appURL)
-        let version = (bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "unknown"
+        // Read from disk rather than through Bundle, which caches: a snapshot stamped with
+        // a stale version would silently diff against itself after an in-place update.
+        let version = ax.bundleVersion(at: appURL) ?? "unknown"
         let hierarchy: [ElementSnapshot]
         if ax.listApps().contains(where: { $0.bundleID == bundleID }) {
             hierarchy = try ax.inspect(bundleID: bundleID, maxDepth: ax.configuration.maximumScanDepth, maxNodes: ax.configuration.maximumScanNodes)

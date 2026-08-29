@@ -69,6 +69,20 @@ public final class AXController {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// The app's version, read from disk on every call.
+    ///
+    /// `Bundle(url:)` caches: once this process has looked at a bundle it keeps returning
+    /// the Info.plist that was there at the time. An app that updates in place therefore
+    /// stays at its old version for the life of the server — and a version gate reading
+    /// that number does not fail closed, it reports compatible forever. Found exactly
+    /// that way: Grok Bot updated to 0.30.0 while every tool still answered 0.29.0.
+    public func bundleVersion(at bundleURL: URL?) -> String? {
+        guard let bundleURL else { return nil }
+        let plist = bundleURL.appendingPathComponent("Contents/Info.plist")
+        guard let contents = NSDictionary(contentsOf: plist) else { return nil }
+        return contents["CFBundleShortVersionString"] as? String
+    }
+
     public func listApps() -> [AppInfo] {
         NSWorkspace.shared.runningApplications.compactMap { app in
             guard let bundleID = app.bundleIdentifier,
@@ -77,7 +91,7 @@ public final class AXController {
                 bundleID: bundleID,
                 name: app.localizedName ?? bundleID,
                 pid: app.processIdentifier,
-                version: app.bundleURL.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String },
+                version: bundleVersion(at: app.bundleURL),
                 active: app.isActive
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -92,7 +106,7 @@ public final class AXController {
             bundleID: bundleID,
             name: app.localizedName ?? bundleID,
             pid: app.processIdentifier,
-            version: app.bundleURL.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String },
+            version: bundleVersion(at: app.bundleURL),
             active: app.isActive
         )
     }

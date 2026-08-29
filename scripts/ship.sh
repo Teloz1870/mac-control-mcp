@@ -29,8 +29,17 @@ printf '\n=== security ===\n'
 ./scripts/security-check.sh
 
 printf '\n=== install ===\n'
-./scripts/install.sh >/dev/null
 binary="$HOME/.local/bin/mac-control-mcp"
+
+# Replacing the binary costs an Accessibility re-grant, so it is only replaced when it
+# actually differs. A round that only touches reports or documentation leaves the
+# installed binary — and its permission — alone.
+built=$(swift build -c release --show-bin-path)/mac-control-mcp
+if [ -f "$binary" ] && cmp -s "$built" "$binary"; then
+    installed_same=1
+else
+    installed_same=0
+fi
 
 # macOS binds the Accessibility grant to the code signature. A Developer ID is a stable
 # identity, so the grant survives a rebuild; an ad-hoc signature is not, and re-granting
@@ -38,12 +47,17 @@ binary="$HOME/.local/bin/mac-control-mcp"
 # identifier below did not reliably keep the grant — it is a fallback, not a fix.
 identity=$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -F'"' '/Developer ID Application/ { print $2; exit }')
-if [ -n "$identity" ]; then
-    codesign --force --options runtime --timestamp --sign "$identity" "$binary"
-    printf 'signed with: %s\n' "$identity"
+if [ "$installed_same" -eq 1 ]; then
+    printf 'binary unchanged — not reinstalling, so the Accessibility grant is untouched\n'
 else
-    codesign --force --sign - --identifier dk.hegnsfabrikken.mac-control-mcp "$binary"
-    printf 'signed ad-hoc (no Developer ID found) — expect to re-grant Accessibility\n'
+    ./scripts/install.sh >/dev/null
+    if [ -n "$identity" ]; then
+        codesign --force --options runtime --timestamp --sign "$identity" "$binary"
+        printf 'signed with: %s\n' "$identity"
+    else
+        codesign --force --sign - --identifier dk.hegnsfabrikken.mac-control-mcp "$binary"
+        printf 'signed ad-hoc (no Developer ID on this machine)\n'
+    fi
 fi
 printf 'installed: %s (%s)\n' "$binary" "$("$binary" version)"
 
@@ -72,12 +86,14 @@ git push --quiet
 printf 'pushed: %s\n' "$(git rev-parse --short HEAD)"
 
 printf '\n=== next ===\n'
-printf 'Restart Claude (Cmd+Q, reopen) so the MCP server picks up this binary.\n'
-if [ -z "$identity" ]; then
-    printf 'Ad-hoc signed, so the Accessibility grant will probably have dropped: remove\n'
-    printf 'and re-add %s in\n' "$binary"
-    printf 'System Settings > Privacy & Security > Accessibility.\n'
+if [ "$installed_same" -eq 1 ]; then
+    printf 'Nothing to restart or re-grant: the running server is already this binary.\n'
+elif [ -n "$identity" ]; then
+    printf 'Restart Claude (Cmd+Q, reopen). Developer ID signed, so re-grant Accessibility\n'
+    printf 'once after the first such build; it should hold across later ones.\n'
 else
-    printf 'Developer ID signed. Re-grant Accessibility once after the first such build;\n'
-    printf 'it should hold across later ones.\n'
+    printf 'Restart Claude (Cmd+Q, reopen), then remove and re-add\n'
+    printf '  %s\n' "$binary"
+    printf 'in System Settings > Privacy & Security > Accessibility. Ad-hoc signing does\n'
+    printf 'not reliably keep the grant across a reinstall.\n'
 fi
