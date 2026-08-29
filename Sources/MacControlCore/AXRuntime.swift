@@ -158,7 +158,12 @@ public final class AXController {
         // their node, never fire the change event their framework listens for, and put the
         // old text back on the next render — so the attribute reads correctly for a moment
         // and the app never knew. Read it back and say so rather than reporting success.
-        guard stringAttribute(element, kAXValueAttribute) == value else {
+        //
+        // Containment, not equality: a field that keeps the text may still normalise it,
+        // typically by appending a newline. Demanding an exact match rejects writes that
+        // plainly worked, which is the same failure this check exists to prevent, only
+        // pointing the other way.
+        guard ValueWritePolicy.kept(written: value, readback: stringAttribute(element, kAXValueAttribute)) else {
             throw MacControlError.unavailable("The element accepted the value and did not keep it. This is common in web-backed fields, which ignore an Accessibility write that arrives without the input event their framework expects. The value was not saved.")
         }
     }

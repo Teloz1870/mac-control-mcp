@@ -57,6 +57,16 @@ private func element(role: String = "AXButton", identifier: String? = nil, title
     #expect(scoped.map(\.path) == [[0, 1, 0]])
 }
 
+@Test func aWriteCountsAsKeptOnlyWhenTheTextSurvives() {
+    // A field that keeps the text may normalise it; a field that reverts puts back
+    // something else entirely. Equality would reject the first as if it were the second.
+    #expect(ValueWritePolicy.kept(written: "hello", readback: "hello"))
+    #expect(ValueWritePolicy.kept(written: "hello", readback: "hello\n"))
+    #expect(!ValueWritePolicy.kept(written: "ny dansk tekst", readback: "the old English text"))
+    #expect(!ValueWritePolicy.kept(written: "hello", readback: nil))
+    #expect(!ValueWritePolicy.kept(written: "hello", readback: ""))
+}
+
 @Test func unknownPositionIsNeverAContainer() {
     // Reported by the peer review of d51cef4: an empty path is a prefix of every path,
     // so accepting one as a container would scope an action to the whole app.

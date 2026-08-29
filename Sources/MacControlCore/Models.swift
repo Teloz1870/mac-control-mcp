@@ -95,6 +95,15 @@ public struct ElementSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+public enum ValueWritePolicy {
+    /// Whether a field kept what was written to it. Containment rather than equality:
+    /// a field that keeps the text may normalise it, typically by appending a newline.
+    /// A revert puts different text back entirely, which containment still catches.
+    public static func kept(written: String, readback: String?) -> Bool {
+        (readback ?? "").contains(written)
+    }
+}
+
 /// Pure containment helpers over a flat inspection result. Adapters use these to
 /// scope an action to one widget instead of pressing the first app-wide match.
 public enum ElementTree {

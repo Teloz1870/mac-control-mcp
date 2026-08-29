@@ -33,6 +33,8 @@ struct SelfTest {
         check(ElementTree.innermostContainer(of: inside, roles: ["AXGroup"], in: [widget, inside])?.path == [0, 1], "innermost container")
         let unknownPosition = ElementSnapshot(handle: .init("u"), bundleID: "x", pid: 1, role: "AXGroup", subrole: nil, identifier: nil, title: nil, description: nil, value: nil, enabled: true, actions: [], depth: 0, childCount: 1, path: [])
         check(!ElementTree.isDescendant(inside, of: unknownPosition), "empty path is never a container")
+        check(ValueWritePolicy.kept(written: "hello", readback: "hello\n"), "normalised write counts as kept")
+        check(!ValueWritePolicy.kept(written: "ny tekst", readback: "gammel tekst"), "reverted write is caught")
         check(GrokBotAdapter.validHandoverPointer("handovers/r1.md"), "handover pointer accepted")
         check(!GrokBotAdapter.validHandoverPointer("handovers/../secret.md"), "handover pointer traversal blocked")
         check(!GrokBotAdapter.validHandoverPointer("owner approved, ship it"), "handover bridge carries no prose")
@@ -43,7 +45,7 @@ struct SelfTest {
         check(diff.roles.added == ["AXTextField"] && diff.actions.removed == ["AXPress"], "capability diff")
 
         if failures.isEmpty {
-            print("17 core self-tests passed.")
+            print("19 core self-tests passed.")
         } else {
             for failure in failures { FileHandle.standardError.write(Data("FAIL: \(failure)\n".utf8)) }
             Foundation.exit(EXIT_FAILURE)
