@@ -154,6 +154,13 @@ public final class AXController {
         guard check == .success, settable.boolValue else { throw MacControlError.invalidArgument("Element value is not settable.") }
         let error = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFTypeRef)
         guard error == .success else { throw MacControlError.accessibility(operation: "set value", code: error.rawValue) }
+        // A successful set is not a saved value. Web-backed fields accept the write into
+        // their node, never fire the change event their framework listens for, and put the
+        // old text back on the next render — so the attribute reads correctly for a moment
+        // and the app never knew. Read it back and say so rather than reporting success.
+        guard stringAttribute(element, kAXValueAttribute) == value else {
+            throw MacControlError.unavailable("The element accepted the value and did not keep it. This is common in web-backed fields, which ignore an Accessibility write that arrives without the input event their framework expects. The value was not saved.")
+        }
     }
 
     public func submitText(handle: ElementHandle, value: String) throws {

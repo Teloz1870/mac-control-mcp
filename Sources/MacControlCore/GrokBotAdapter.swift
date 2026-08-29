@@ -74,7 +74,7 @@ public final class GrokBotAdapter: AppAdapter {
             return try JSONOutput.encode(try listBots(), pretty: true)
         case "grokbot_open_bot":
             let name = try required("name", arguments)
-            try openBot(name: name)
+            try await openBot(name: name)
             return try JSONOutput.encode(["opened": name])
         case "grokbot_read_conversation":
             let limit = min(max(Int(arguments["limit"] ?? "50") ?? 50, 1), 200)
@@ -149,7 +149,12 @@ public final class GrokBotAdapter: AppAdapter {
         try botButtons(in: try fullTree()).compactMap(\.description)
     }
 
-    private func openBot(name: String) throws {
+    /// The name of the conversation currently on screen, taken from the main landmark.
+    private func currentBot(in elements: [ElementSnapshot]) -> String? {
+        elements.first { $0.subrole == "AXLandmarkMain" }?.title
+    }
+
+    private func openBot(name: String) async throws {
         let elements = try fullTree()
         let matches = try botButtons(in: elements).filter {
             $0.description?.localizedCaseInsensitiveCompare(name) == .orderedSame
@@ -157,7 +162,21 @@ public final class GrokBotAdapter: AppAdapter {
         guard matches.count == 1, let button = matches.first else {
             throw MacControlError.elementNotFound("exactly one bot named \(name) in the sidebar; found \(matches.count)")
         }
+        if currentBot(in: elements)?.localizedCaseInsensitiveCompare(name) == .orderedSame { return }
         try ax.perform(handle: button.handle, action: kAXPressAction)
+
+        // Grok Bot 0.29 advertises AXPress on the sidebar row and then does nothing with
+        // it. Reporting the switch on the strength of a successful press would be a lie
+        // the caller cannot detect, so the switch is confirmed against the main landmark
+        // before this returns. There is deliberately no coordinate fallback: if the app
+        // will not honour its own action, that is a fact about the app and the caller
+        // deserves to hear it.
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            try await Task.sleep(for: .milliseconds(200))
+            if currentBot(in: try fullTree())?.localizedCaseInsensitiveCompare(name) == .orderedSame { return }
+        }
+        throw MacControlError.unavailable("Pressed the sidebar entry for \(name), but the conversation did not change. Grok Bot \(try detectedVersion()) exposes AXPress on that row without acting on it; the bot must be opened by hand.")
     }
 
     /// Reads the transcript only. Scoping matters: an app-wide sweep of static text also
