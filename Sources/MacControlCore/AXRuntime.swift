@@ -134,7 +134,7 @@ public final class AXController {
 
     public func read(handle: ElementHandle) throws -> ElementSnapshot {
         let (element, locator) = try resolve(handle)
-        return snapshot(element, locator: locator, depth: locator.path.count)
+        return snapshot(element, handle: handle.rawValue, locator: locator, depth: locator.path.count)
     }
 
     public func perform(handle: ElementHandle, action: String) throws {
@@ -147,7 +147,7 @@ public final class AXController {
 
     public func setValue(handle: ElementHandle, value: String) throws {
         let (element, locator) = try resolve(handle)
-        let current = snapshot(element, locator: locator, depth: locator.path.count)
+        let current = snapshot(element, handle: handle.rawValue, locator: locator, depth: locator.path.count)
         try SafetyPolicy.validateWritable(role: current.role, subrole: current.subrole, identifier: current.identifier, title: current.title, description: current.description)
         var settable = DarwinBoolean(false)
         let check = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable)
@@ -158,7 +158,7 @@ public final class AXController {
 
     public func submitText(handle: ElementHandle, value: String) throws {
         let (element, locator) = try resolve(handle)
-        let current = snapshot(element, locator: locator, depth: locator.path.count)
+        let current = snapshot(element, handle: handle.rawValue, locator: locator, depth: locator.path.count)
         try SafetyPolicy.validateWritable(role: current.role, subrole: current.subrole, identifier: current.identifier, title: current.title, description: current.description)
         try setValue(handle: handle, value: value)
         _ = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
@@ -166,23 +166,63 @@ public final class AXController {
             let result = AXUIElementPerformAction(element, kAXConfirmAction as CFString)
             if result == .success { return }
         }
+        // Fallback only. A synthetic Return is the one operation that can escape the
+        // target app, so it is refused unless that app owns the keyboard focus, and
+        // it is delivered to the app's process rather than the global event tap.
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == locator.pid else {
+            throw MacControlError.unavailable("Element exposes no AXConfirm action, and \(locator.bundleID) is not frontmost. Refusing to send a Return key event that another app could receive. Bring the app to the front and retry.")
+        }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else {
             throw MacControlError.unavailable("Could not create a Return key event.")
         }
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        down.postToPid(locator.pid)
+        up.postToPid(locator.pid)
     }
 
+    /// Presses a menu item by walking the menu bar level by level. Every component
+    /// of `path` must match exactly one item at its own level, so "File > Close"
+    /// can never resolve to "Window > Close".
     public func pressMenuItem(bundleID: String, path: [String]) throws {
         guard !path.isEmpty else { throw MacControlError.invalidArgument("Menu path must not be empty.") }
-        let nodes = try inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
-        let targets = nodes.filter { $0.role == kAXMenuItemRole && $0.title == path.last }
-        guard targets.count == 1, let target = targets.first else {
-            throw MacControlError.elementNotFound("menu item \(path.joined(separator: " > "))")
+        guard isTrusted else { throw MacControlError.accessibilityDenied }
+        let app = try appInfo(bundleID: bundleID)
+        let root = AXUIElementCreateApplication(app.pid)
+        AXUIElementSetMessagingTimeout(root, 1.0)
+        var current = try menuBar(of: root, bundleID: bundleID)
+        for (index, component) in path.enumerated() {
+            let matches = menuChildren(current).filter {
+                stringAttribute($0, kAXTitleAttribute)?.localizedCaseInsensitiveCompare(component) == .orderedSame
+            }
+            let walked = path.prefix(index + 1).joined(separator: " > ")
+            guard matches.count == 1, let next = matches.first else {
+                throw MacControlError.elementNotFound("menu item \(walked); \(matches.count) items match at that level")
+            }
+            current = next
         }
-        try perform(handle: target.handle, action: kAXPressAction)
+        guard actionNames(current).contains(kAXPressAction) else {
+            throw MacControlError.invalidArgument("Menu item \(path.joined(separator: " > ")) exposes no AXPress action.")
+        }
+        let error = AXUIElementPerformAction(current, kAXPressAction as CFString)
+        guard error == .success else { throw MacControlError.accessibility(operation: kAXPressAction, code: error.rawValue) }
+    }
+
+    private func menuBar(of root: AXUIElement, bundleID: String) throws -> AXUIElement {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(root, kAXMenuBarAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            throw MacControlError.elementNotFound("menu bar for \(bundleID)")
+        }
+        return value as! AXUIElement
+    }
+
+    /// Children of a menu node, transparently descending through the AXMenu
+    /// wrapper macOS inserts between a menu item and its submenu items.
+    private func menuChildren(_ element: AXUIElement) -> [AXUIElement] {
+        children(element).flatMap { child in
+            stringAttribute(child, kAXRoleAttribute) == kAXMenuRole ? children(child) : [child]
+        }
     }
 
     public func waitFor(bundleID: String, query: ElementQuery, timeout: TimeInterval) async throws -> ElementSnapshot {
@@ -210,8 +250,8 @@ public final class AXController {
 
     private func traverse(_ element: AXUIElement, bundleID: String, pid: pid_t, path: [Int], depth: Int, maxDepth: Int, maxNodes: Int, output: inout [ElementSnapshot]) {
         guard output.count < maxNodes else { return }
-        let locator = makeLocator(element: element, bundleID: bundleID, pid: pid, path: path)
-        output.append(snapshot(element, locator: locator, depth: depth))
+        let (handle, locator) = makeLocator(element: element, bundleID: bundleID, pid: pid, path: path)
+        output.append(snapshot(element, handle: handle, locator: locator, depth: depth))
         guard depth < maxDepth else { return }
         for (index, child) in children(element).enumerated() {
             guard output.count < maxNodes else { return }
@@ -219,28 +259,29 @@ public final class AXController {
         }
     }
 
-    private func makeLocator(element: AXUIElement, bundleID: String, pid: pid_t, path: [Int]) -> ElementLocator {
+    private func makeLocator(element: AXUIElement, bundleID: String, pid: pid_t, path: [Int]) -> (String, ElementLocator) {
         let fingerprint = fingerprint(element, path: path)
         let raw = "axh_\(pid)_\(generation)_\(stableHash("\(fingerprint)|\(UUID().uuidString)"))"
-        handles[raw] = ElementLocator(bundleID: bundleID, pid: pid, path: path, fingerprint: fingerprint, generation: generation, expiresAt: Date().addingTimeInterval(configuration.handleLifetimeSeconds))
-        return handles[raw]!
+        let locator = ElementLocator(bundleID: bundleID, pid: pid, path: path, fingerprint: fingerprint, generation: generation, expiresAt: Date().addingTimeInterval(configuration.handleLifetimeSeconds))
+        handles[raw] = locator
+        return (raw, locator)
     }
 
-    private func snapshot(_ element: AXUIElement, locator: ElementLocator, depth: Int) -> ElementSnapshot {
+    private func snapshot(_ element: AXUIElement, handle: String, locator: ElementLocator, depth: Int) -> ElementSnapshot {
         let role = stringAttribute(element, kAXRoleAttribute)
         let subrole = stringAttribute(element, kAXSubroleAttribute)
         let identifier = stringAttribute(element, kAXIdentifierAttribute)
         let title = stringAttribute(element, kAXTitleAttribute)
         let description = stringAttribute(element, kAXDescriptionAttribute)
         let rawValue = stringAttribute(element, kAXValueAttribute)
-        let handle = handles.first(where: { $0.value.path == locator.path && $0.value.generation == locator.generation })?.key ?? "invalid"
         return ElementSnapshot(
             handle: ElementHandle(handle), bundleID: locator.bundleID, pid: locator.pid,
             role: role, subrole: subrole, identifier: identifier,
             title: SafetyPolicy.redact(title, role: role, subrole: subrole, identifier: identifier, title: title, description: description),
             description: SafetyPolicy.redact(description, role: role, subrole: subrole, identifier: identifier, title: title, description: description),
             value: SafetyPolicy.redact(rawValue, role: role, subrole: subrole, identifier: identifier, title: title, description: description),
-            enabled: boolAttribute(element, kAXEnabledAttribute), actions: actionNames(element), depth: depth, childCount: children(element).count
+            enabled: boolAttribute(element, kAXEnabledAttribute), actions: actionNames(element), depth: depth, childCount: children(element).count,
+            path: locator.path
         )
     }
 

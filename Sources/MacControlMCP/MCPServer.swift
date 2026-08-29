@@ -98,7 +98,7 @@ final class ToolService {
             tool("mac_find_elements", "Find Accessibility elements using semantic attributes, never screen coordinates.", readOnly: true, required: ["bundle_id"], optional: ["role", "identifier", "title", "description", "value_contains", "limit"]),
             tool("mac_read_element", "Re-find and read one element through a short-lived handle.", readOnly: true, required: ["handle"]),
             tool("mac_perform_action", "Perform an action already exposed by an Accessibility element.", readOnly: false, destructive: true, required: ["handle", "action"]),
-            tool("mac_set_value", "Set a non-secure Accessibility value. Secure and secret-like fields are blocked.", readOnly: false, required: ["handle", "value"]),
+            tool("mac_set_value", "Set a non-secure Accessibility value. Secure and secret-like fields are blocked.", readOnly: false, destructive: true, required: ["handle", "value"]),
             tool("mac_press_menu_item", "Press an exact visible menu item in an allowed app.", readOnly: false, destructive: true, required: ["bundle_id", "path"], arrays: ["path"]),
             tool("mac_wait_for", "Wait with AXObserver-backed checks for a semantic element condition.", readOnly: true, required: ["bundle_id"], optional: ["role", "identifier", "title", "description", "value_contains", "timeout_seconds"]),
             tool("mac_scan_capabilities", "Scan live AX metadata and read-only Electron metadata, then save a redacted local snapshot.", readOnly: false, required: ["bundle_id"], optional: ["include_electron"]),
@@ -107,7 +107,7 @@ final class ToolService {
     }
 
     private func tool(from definition: AdapterToolDefinition) -> Tool {
-        tool(definition.name, definition.description, readOnly: definition.readOnly, required: definition.requiredArguments, optional: definition.optionalArguments)
+        tool(definition.name, definition.description, readOnly: definition.readOnly, destructive: definition.destructive, required: definition.requiredArguments, optional: definition.optionalArguments)
     }
 
     private func tool(_ name: String, _ description: String, readOnly: Bool, destructive: Bool = false, required: [String] = [], optional: [String] = [], arrays: Set<String> = []) -> Tool {

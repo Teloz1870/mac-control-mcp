@@ -11,7 +11,7 @@ public final class GrokBotAdapter: AppAdapter {
     public init(ax: AXController) { self.ax = ax }
 
     public var capabilities: [String] {
-        ["status", "bots", "conversation", "prompt", "question-widget", "routines"]
+        ["status", "bots", "conversation", "prompt", "question-widget", "routines", "handover-pointer"]
     }
 
     public var selectors: [SemanticSelector] {
@@ -24,6 +24,11 @@ public final class GrokBotAdapter: AppAdapter {
             .init(name: "conversation-details", candidates: [
                 .init(role: "AXButton", identifier: "conversation-details"),
                 .init(role: "AXButton", description: "View conversation details"),
+            ]),
+            .init(name: "question-widget", candidates: [
+                .init(role: "AXGroup", identifier: "question-widget"),
+                .init(role: "AXGroup", identifier: "question"),
+                .init(role: "AXGroup", description: "Question"),
             ]),
         ]
     }
@@ -39,6 +44,7 @@ public final class GrokBotAdapter: AppAdapter {
             .init(name: "grokbot_list_routines", description: "Read visible Grok Bot routines without enabling or running them.", readOnly: true),
             .init(name: "grokbot_run_routine", description: "Run an exact visible routine. This changes external state and requires host approval.", readOnly: false, requiredArguments: ["name"]),
             .init(name: "grokbot_set_routine_enabled", description: "Enable or disable an exact visible routine. This changes external state.", readOnly: false, requiredArguments: ["name", "enabled"]),
+            .init(name: "grokbot_notify_handover", description: "Ring the peer agent's doorbell: send a fixed pointer to one repo-relative handover file. Carries no content, no claims and no approval, because those travel through the repository. This changes external state and requires host approval.", readOnly: false, requiredArguments: ["path"]),
         ]
     }
 
@@ -77,7 +83,7 @@ public final class GrokBotAdapter: AppAdapter {
             return try JSONOutput.encode(["sent": true])
         case "grokbot_answer_question":
             let answer = try required("answer", arguments)
-            try pressExactButton(title: answer, purpose: "question answer")
+            try answerQuestion(answer)
             return try JSONOutput.encode(["answered": answer])
         case "grokbot_list_routines":
             return try JSONOutput.encode(try listRoutines(), pretty: true)
@@ -85,6 +91,10 @@ public final class GrokBotAdapter: AppAdapter {
             let name = try required("name", arguments)
             try routineAction(name: name, actionLabels: ["Run now", "Run"])
             return try JSONOutput.encode(["ran": name])
+        case "grokbot_notify_handover":
+            let path = try required("path", arguments)
+            try await notifyHandover(path: path)
+            return try JSONOutput.encode(["notified": path])
         case "grokbot_set_routine_enabled":
             let name = try required("name", arguments)
             guard let enabled = Bool(try required("enabled", arguments)) else { throw MacControlError.invalidArgument("enabled must be true or false") }
@@ -140,9 +150,47 @@ public final class GrokBotAdapter: AppAdapter {
             let count = try readConversation(limit: 200).filter { $0 == prompt }.count - before
             if count == 1 { return }
             if count > 1 { throw MacControlError.unavailable("Prompt appeared more than once; refusing to retry.") }
-            try await Task.sleep(for: .milliseconds(100))
+            // Each poll is a full bounded AX traversal, so it is deliberately unhurried.
+            try await Task.sleep(for: .milliseconds(300))
         }
         throw MacControlError.timeout("sent prompt did not appear exactly once; it was not retried")
+    }
+
+    /// Presses an answer strictly inside the visible question widget. Scoping matters:
+    /// an app-wide title match could press an unrelated control that happens to carry
+    /// the same label (an answer "Send" would otherwise hit the composer's Send button).
+    private func answerQuestion(_ answer: String) throws {
+        guard let widget = try resolve(selectors.first { $0.name == "question-widget" }!, using: ax, limit: 2).first else {
+            throw MacControlError.elementNotFound("GrokBot.question-widget; refusing an app-wide press for answer \(answer)")
+        }
+        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let candidates = ElementTree.descendants(of: widget, in: elements).filter {
+            $0.role == "AXButton"
+                && $0.title?.localizedCaseInsensitiveCompare(answer) == .orderedSame
+                && $0.actions.contains(kAXPressAction)
+        }
+        guard candidates.count == 1, let button = candidates.first else {
+            throw MacControlError.elementNotFound("exactly one answer button named \(answer) inside the question widget; found \(candidates.count)")
+        }
+        try ax.perform(handle: button.handle, action: kAXPressAction)
+    }
+
+    /// A UI bridge is an unreliable, unversioned channel, so it is allowed to carry
+    /// one thing only: a pointer to a handover that already exists in the repository.
+    /// The handover's content, its claims and any approval stay in git, where they are
+    /// versioned and diffable and where the receiver can verify them independently.
+    public nonisolated static func validHandoverPointer(_ path: String) -> Bool {
+        guard path.count <= 200,
+              path.range(of: #"\A[A-Za-z0-9._/-]+\.md\z"#, options: .regularExpression) != nil,
+              !path.hasPrefix("/"), !path.contains(".."), !path.contains("//") else { return false }
+        return true
+    }
+
+    private func notifyHandover(path: String) async throws {
+        guard Self.validHandoverPointer(path) else {
+            throw MacControlError.invalidArgument("A handover pointer must be a repo-relative .md path. This bridge carries a pointer only; the handover itself, and any approval, must travel through the repository.")
+        }
+        try await sendPrompt("HANDOVER: read \(path) and follow PROTOCOL.md")
     }
 
     private func pressExactButton(title: String, purpose: String) throws {
@@ -173,27 +221,53 @@ public final class GrokBotAdapter: AppAdapter {
         try ax.perform(handle: button.handle, action: kAXPressAction)
     }
 
+    /// Runs one routine by pressing the control inside that routine's own row, so a
+    /// "Run now" button belonging to a different routine can never be pressed instead.
     private func routineAction(name: String, actionLabels: [String]) throws {
         try openDetailsIfNeeded()
-        guard !(try ax.find(bundleID: bundleID, query: .init(valueContains: name), limit: 5)).isEmpty else {
+        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let labels = elements.filter {
+            ($0.value ?? $0.title)?.localizedCaseInsensitiveContains(name) == true
+        }
+        guard let label = labels.min(by: { ($0.value ?? $0.title ?? "").count < ($1.value ?? $1.title ?? "").count }) else {
             throw MacControlError.elementNotFound("routine named \(name)")
         }
-        for label in actionLabels {
-            if let button = try ax.find(bundleID: bundleID, query: .init(role: "AXButton", title: label), limit: 2).first {
+        guard let row = ElementTree.innermostContainer(of: label, roles: ["AXRow", "AXGroup", "AXCell"], in: elements) else {
+            throw MacControlError.elementNotFound("row container for routine \(name)")
+        }
+        let buttons = ElementTree.descendants(of: row, in: elements).filter { $0.role == "AXButton" && $0.actions.contains(kAXPressAction) }
+        for actionLabel in actionLabels {
+            let matches = buttons.filter { $0.title?.localizedCaseInsensitiveCompare(actionLabel) == .orderedSame }
+            guard matches.count <= 1 else {
+                throw MacControlError.elementNotFound("exactly one \(actionLabel) control inside the row for routine \(name); found \(matches.count)")
+            }
+            if let button = matches.first {
                 try ax.perform(handle: button.handle, action: kAXPressAction); return
             }
         }
-        throw MacControlError.elementNotFound("run control for routine \(name)")
+        throw MacControlError.elementNotFound("run control inside the row for routine \(name)")
     }
 
+    /// Toggles the switch belonging to one routine. The switch is located inside the
+    /// routine's own row, so a second routine on screen no longer makes this ambiguous
+    /// and can never be toggled by mistake.
     private func setRoutine(name: String, enabled: Bool) throws {
         try openDetailsIfNeeded()
-        guard !(try ax.find(bundleID: bundleID, query: .init(valueContains: name), limit: 5)).isEmpty else {
+        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let labels = elements.filter {
+            ($0.value ?? $0.title)?.localizedCaseInsensitiveContains(name) == true
+        }
+        guard let label = labels.min(by: { ($0.value ?? $0.title ?? "").count < ($1.value ?? $1.title ?? "").count }) else {
             throw MacControlError.elementNotFound("routine named \(name)")
         }
-        let switches = try ax.find(bundleID: bundleID, query: .init(role: "AXCheckBox"), limit: 20)
+        guard let row = ElementTree.innermostContainer(of: label, roles: ["AXRow", "AXGroup", "AXCell"], in: elements) else {
+            throw MacControlError.elementNotFound("row container for routine \(name)")
+        }
+        let switches = ElementTree.descendants(of: row, in: elements).filter {
+            ["AXCheckBox", "AXSwitch", "AXToggle"].contains($0.role ?? "") && $0.actions.contains(kAXPressAction)
+        }
         guard switches.count == 1, let toggle = switches.first else {
-            throw MacControlError.elementNotFound("unambiguous enable switch for routine \(name)")
+            throw MacControlError.elementNotFound("exactly one enable switch inside the row for routine \(name); found \(switches.count)")
         }
         let current = ["1", "true", "on"].contains(toggle.value?.lowercased() ?? "")
         if current != enabled { try ax.perform(handle: toggle.handle, action: kAXPressAction) }

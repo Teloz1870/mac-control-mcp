@@ -80,6 +80,8 @@ Adding a bundle id authorizes only Accessibility operations and capability scann
 
 Sending prompts, setting values, pressing controls and running routines change external state. MCP tool annotations and server instructions tell the host to apply its approval rules. Unknown Grok Bot versions fail closed, selector failures recommend a rescan, and there is no automatic coordinate fallback.
 
+Actions are scoped to the widget they belong to: an answer is pressed inside the resolved question widget, and a routine control is found inside that routine's own row, so an identically labelled control elsewhere in the window is never pressed instead. Menu paths are matched component by component down the real menu hierarchy. When a text field exposes no `AXConfirm` action, the submit fallback posts a Return key event to the target process and refuses to do so unless that app is frontmost.
+
 Read [SECURITY.md](SECURITY.md) before adding adapters. Architecture and extension details are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/ADAPTERS.md](docs/ADAPTERS.md).
 
 ## Status

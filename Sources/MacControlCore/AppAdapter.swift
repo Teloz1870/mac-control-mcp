@@ -24,13 +24,17 @@ public struct AdapterToolDefinition: Sendable, Equatable {
     public let name: String
     public let description: String
     public let readOnly: Bool
+    /// Reported to the host as `destructiveHint`. Defaults to every mutating tool so
+    /// an adapter cannot understate a change of external state by omission.
+    public let destructive: Bool
     public let requiredArguments: [String]
     public let optionalArguments: [String]
 
-    public init(name: String, description: String, readOnly: Bool, requiredArguments: [String] = [], optionalArguments: [String] = []) {
+    public init(name: String, description: String, readOnly: Bool, destructive: Bool? = nil, requiredArguments: [String] = [], optionalArguments: [String] = []) {
         self.name = name
         self.description = description
         self.readOnly = readOnly
+        self.destructive = destructive ?? !readOnly
         self.requiredArguments = requiredArguments
         self.optionalArguments = optionalArguments
     }

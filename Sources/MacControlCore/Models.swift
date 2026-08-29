@@ -59,11 +59,60 @@ public struct ElementSnapshot: Codable, Sendable, Equatable {
     public let actions: [String]
     public let depth: Int
     public let childCount: Int
+    /// Structural index path from the application element. Enables containment
+    /// checks so adapters can scope a search to one widget instead of the app.
+    public let path: [Int]
 
-    public init(handle: ElementHandle, bundleID: String, pid: Int32, role: String?, subrole: String?, identifier: String?, title: String?, description: String?, value: String?, enabled: Bool?, actions: [String], depth: Int, childCount: Int) {
+    public init(handle: ElementHandle, bundleID: String, pid: Int32, role: String?, subrole: String?, identifier: String?, title: String?, description: String?, value: String?, enabled: Bool?, actions: [String], depth: Int, childCount: Int, path: [Int] = []) {
         self.handle = handle; self.bundleID = bundleID; self.pid = pid; self.role = role; self.subrole = subrole
         self.identifier = identifier; self.title = title; self.description = description; self.value = value
         self.enabled = enabled; self.actions = actions; self.depth = depth; self.childCount = childCount
+        self.path = path
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case handle, bundleID, pid, role, subrole, identifier, title, description, value, enabled, actions, depth, childCount, path
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        handle = try container.decode(ElementHandle.self, forKey: .handle)
+        bundleID = try container.decode(String.self, forKey: .bundleID)
+        pid = try container.decode(Int32.self, forKey: .pid)
+        role = try container.decodeIfPresent(String.self, forKey: .role)
+        subrole = try container.decodeIfPresent(String.self, forKey: .subrole)
+        identifier = try container.decodeIfPresent(String.self, forKey: .identifier)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        value = try container.decodeIfPresent(String.self, forKey: .value)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled)
+        actions = try container.decodeIfPresent([String].self, forKey: .actions) ?? []
+        depth = try container.decode(Int.self, forKey: .depth)
+        childCount = try container.decode(Int.self, forKey: .childCount)
+        // Snapshots written before schema 2 have no path; containment checks then
+        // degrade to "no container found" rather than failing the whole read.
+        path = try container.decodeIfPresent([Int].self, forKey: .path) ?? []
+    }
+}
+
+/// Pure containment helpers over a flat inspection result. Adapters use these to
+/// scope an action to one widget instead of pressing the first app-wide match.
+public enum ElementTree {
+    public static func isDescendant(_ candidate: ElementSnapshot, of container: ElementSnapshot) -> Bool {
+        guard candidate.path.count > container.path.count else { return false }
+        return Array(candidate.path.prefix(container.path.count)) == container.path
+    }
+
+    /// Elements inside `container`, excluding the container itself.
+    public static func descendants(of container: ElementSnapshot, in elements: [ElementSnapshot]) -> [ElementSnapshot] {
+        elements.filter { isDescendant($0, of: container) }
+    }
+
+    /// The innermost element with one of `roles` that contains `target`.
+    public static func innermostContainer(of target: ElementSnapshot, roles: Set<String>, in elements: [ElementSnapshot]) -> ElementSnapshot? {
+        elements
+            .filter { roles.contains($0.role ?? "") && isDescendant(target, of: $0) }
+            .max { $0.path.count < $1.path.count }
     }
 }
 

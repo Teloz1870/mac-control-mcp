@@ -4,6 +4,23 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `grokbot_notify_handover` rings a peer agent's doorbell for the [Agent Handover Protocol](https://github.com/Teloz1870/agent-handover-protocol). It accepts a repo-relative `.md` pointer and nothing else, so the bridge cannot become a second, unversioned transport for handover content, claims or approval.
+
+### Fixed
+
+- The synthetic Return fallback in `submitText` is now delivered to the target process and refused unless that app is frontmost, so it can no longer reach another app.
+- `mac_press_menu_item` walks the menu bar level by level and requires an exact single match per component, so `File > Close` can no longer resolve to `Window > Close`.
+- `grokbot_answer_question` presses only inside the resolved question widget instead of any app-wide button with the same title.
+- `grokbot_run_routine` and `grokbot_set_routine_enabled` locate the control inside the named routine's own row, so more than one routine on screen is no longer ambiguous.
+
+### Changed
+
+- `ElementSnapshot` carries its structural `path`, and `ElementTree` offers containment helpers so adapters can scope a search to one widget. Capability snapshots are now schema 2; snapshots written by earlier builds still decode with an empty path.
+- `mac_set_value` and every mutating adapter tool report `destructiveHint` to the host.
+- Element snapshots resolve their handle directly rather than scanning the handle table, removing quadratic cost from full scans.
+
 ## [0.1.0-preview] - 2026-08-28
 
 ### Added

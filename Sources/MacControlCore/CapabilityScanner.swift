@@ -22,7 +22,7 @@ public final class CapabilityScanner {
         }
         let electron = includeElectron ? ElectronScanner.scan(appURL: appURL) : nil
         return CapabilitySnapshot(
-            schemaVersion: 1,
+            schemaVersion: 2,
             bundleID: bundleID,
             appVersion: version,
             capturedAt: Date(),
