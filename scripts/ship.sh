@@ -13,6 +13,9 @@ if [ $# -lt 1 ]; then
     exit 2
 fi
 
+message="$1"
+shift
+
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_dir"
 
@@ -41,7 +44,6 @@ printf '\n=== publish ===\n'
 # it is staged, so a sweep is at least never silent; pass explicit paths after the
 # message to stage only those.
 if [ -n "$(git status --porcelain)" ]; then
-    shift
     if [ $# -gt 0 ]; then
         printf 'staging named paths only:\n'
         for path in "$@"; do printf '  %s\n' "$path"; done
@@ -52,7 +54,7 @@ if [ -n "$(git status --porcelain)" ]; then
         printf 'If any of that belongs to another lane, stop now and stage by path instead.\n'
         git add -A
     fi
-    git commit -m "$1"
+    git commit -m "$message"
 else
     printf 'nothing to commit\n'
 fi

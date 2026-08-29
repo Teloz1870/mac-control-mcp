@@ -92,7 +92,7 @@ Known limitations on 0.29.x, all found by using the adapter rather than reading 
 
 - The sidebar publishes `AXPress` on each conversation row and ignores it. `grokbot_open_bot` presses, confirms against the window's own title, and fails with that fact rather than reporting a switch that did not happen. There is no coordinate fallback.
 - Web-backed fields accept an Accessibility write and can discard it, and they update their reported value and focus on the next render rather than on the call. `mac_set_value` and `submitText` wait for the app to answer and fail when the value did not survive.
-- The Accessibility grant is bound to the binary, so reinstalling drops it until the entry is removed and re-added. `scripts/ship.sh` signs with a stable identifier to reduce this; a Developer ID is the real fix.
+- The Accessibility grant is bound to the binary, so reinstalling drops it until the entry is removed and re-added. `scripts/ship.sh` signs with a stable ad-hoc identifier so the grant survives a rebuild. Note what that trades away: anything written to `~/.local/bin/mac-control-mcp` under the same identifier inherits the Accessibility permission you granted. Treat that path as privileged. A Developer ID is the real fix.
 
 ## License
 
