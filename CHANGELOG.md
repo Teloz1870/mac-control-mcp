@@ -4,7 +4,13 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ## [Unreleased]
 
-## [0.1.1-preview] - 2026-08-29
+### Fixed
+
+Three defects found by peer review of `d51cef4` ([report](handovers/2026-08-29-grok-r1-report.md)):
+
+- `ElementTree` no longer accepts an element with an empty path as a container. Every path starts with the empty path, so a root element or a pre-schema-2 snapshot silently became the ancestor of the whole app — defeating the widget scoping these helpers exist to enforce.
+- `mac_press_menu_item` opens a submenu that reports no children and looks again, because many apps populate a submenu only once it is opened. Menus opened during a failed walk are closed again.
+- `submitText` verifies the element actually holds keyboard focus before posting Return. Frontmost settles only which app receives the key, not which field.
 
 ### Added
 

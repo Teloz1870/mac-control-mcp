@@ -161,7 +161,7 @@ public final class AXController {
         let current = snapshot(element, handle: handle.rawValue, locator: locator, depth: locator.path.count)
         try SafetyPolicy.validateWritable(role: current.role, subrole: current.subrole, identifier: current.identifier, title: current.title, description: current.description)
         try setValue(handle: handle, value: value)
-        _ = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        let focusResult = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         if actionNames(element).contains(kAXConfirmAction) {
             let result = AXUIElementPerformAction(element, kAXConfirmAction as CFString)
             if result == .success { return }
@@ -171,6 +171,12 @@ public final class AXController {
         // it is delivered to the app's process rather than the global event tap.
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == locator.pid else {
             throw MacControlError.unavailable("Element exposes no AXConfirm action, and \(locator.bundleID) is not frontmost. Refusing to send a Return key event that another app could receive. Bring the app to the front and retry.")
+        }
+        // Frontmost only settles which app receives the key. Within that app the Return
+        // still lands wherever focus actually is, so the element must confirm it holds
+        // focus — the setter's own result is not taken on trust.
+        guard focusResult == .success, boolAttribute(element, kAXFocusedAttribute) == true else {
+            throw MacControlError.unavailable("Element did not take keyboard focus, so a Return key event could reach a different field in the same app. Refusing to send it.")
         }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
@@ -184,28 +190,54 @@ public final class AXController {
     /// Presses a menu item by walking the menu bar level by level. Every component
     /// of `path` must match exactly one item at its own level, so "File > Close"
     /// can never resolve to "Window > Close".
-    public func pressMenuItem(bundleID: String, path: [String]) throws {
+    public func pressMenuItem(bundleID: String, path: [String]) async throws {
         guard !path.isEmpty else { throw MacControlError.invalidArgument("Menu path must not be empty.") }
         guard isTrusted else { throw MacControlError.accessibilityDenied }
         let app = try appInfo(bundleID: bundleID)
         let root = AXUIElementCreateApplication(app.pid)
         AXUIElementSetMessagingTimeout(root, 1.0)
         var current = try menuBar(of: root, bundleID: bundleID)
-        for (index, component) in path.enumerated() {
-            let matches = menuChildren(current).filter {
-                stringAttribute($0, kAXTitleAttribute)?.localizedCaseInsensitiveCompare(component) == .orderedSame
+        // Menus opened to reveal their contents, closed again if the walk fails so a
+        // failed lookup does not leave the app's menus hanging open in the user's face.
+        var opened: [AXUIElement] = []
+        do {
+            for (index, component) in path.enumerated() {
+                var candidates = menuChildren(current)
+                // Many apps populate a submenu only once it is opened, so an empty level
+                // is not proof the item is absent. Open the parent and look again before
+                // concluding anything.
+                if candidates.isEmpty, index > 0, actionNames(current).contains(kAXPressAction) {
+                    let result = AXUIElementPerformAction(current, kAXPressAction as CFString)
+                    if result == .success {
+                        opened.append(current)
+                        try await Task.sleep(for: .milliseconds(150))
+                        candidates = menuChildren(current)
+                    }
+                }
+                let matches = candidates.filter {
+                    stringAttribute($0, kAXTitleAttribute)?.localizedCaseInsensitiveCompare(component) == .orderedSame
+                }
+                let walked = path.prefix(index + 1).joined(separator: " > ")
+                guard matches.count == 1, let next = matches.first else {
+                    throw MacControlError.elementNotFound("menu item \(walked); \(matches.count) items match at that level")
+                }
+                current = next
             }
-            let walked = path.prefix(index + 1).joined(separator: " > ")
-            guard matches.count == 1, let next = matches.first else {
-                throw MacControlError.elementNotFound("menu item \(walked); \(matches.count) items match at that level")
+            guard actionNames(current).contains(kAXPressAction) else {
+                throw MacControlError.invalidArgument("Menu item \(path.joined(separator: " > ")) exposes no AXPress action.")
             }
-            current = next
+            let error = AXUIElementPerformAction(current, kAXPressAction as CFString)
+            guard error == .success else { throw MacControlError.accessibility(operation: kAXPressAction, code: error.rawValue) }
+        } catch {
+            closeMenus(opened)
+            throw error
         }
-        guard actionNames(current).contains(kAXPressAction) else {
-            throw MacControlError.invalidArgument("Menu item \(path.joined(separator: " > ")) exposes no AXPress action.")
+    }
+
+    private func closeMenus(_ opened: [AXUIElement]) {
+        for element in opened.reversed() where actionNames(element).contains(kAXCancelAction) {
+            _ = AXUIElementPerformAction(element, kAXCancelAction as CFString)
         }
-        let error = AXUIElementPerformAction(current, kAXPressAction as CFString)
-        guard error == .success else { throw MacControlError.accessibility(operation: kAXPressAction, code: error.rawValue) }
     }
 
     private func menuBar(of root: AXUIElement, bundleID: String) throws -> AXUIElement {

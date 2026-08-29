@@ -53,7 +53,7 @@ final class ToolService {
             case "mac_press_menu_item":
                 let bundle = try requiredString("bundle_id", arguments)
                 let path = arguments["path"]?.arrayValue?.compactMap(\.stringValue) ?? []
-                try ax.pressMenuItem(bundleID: bundle, path: path)
+                try await ax.pressMenuItem(bundleID: bundle, path: path)
                 result = #"{"pressed":true}"#
             case "mac_wait_for":
                 let bundle = try requiredString("bundle_id", arguments)

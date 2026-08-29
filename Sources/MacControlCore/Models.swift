@@ -99,6 +99,11 @@ public struct ElementSnapshot: Codable, Sendable, Equatable {
 /// scope an action to one widget instead of pressing the first app-wide match.
 public enum ElementTree {
     public static func isDescendant(_ candidate: ElementSnapshot, of container: ElementSnapshot) -> Bool {
+        // An empty path means "position unknown" — the application element itself, or
+        // a snapshot written before schema 2. Every path trivially starts with it, so
+        // accepting one as a container would silently make it the ancestor of the whole
+        // app and defeat the scoping these helpers exist to enforce. Fail closed.
+        guard !container.path.isEmpty else { return false }
         guard candidate.path.count > container.path.count else { return false }
         return Array(candidate.path.prefix(container.path.count)) == container.path
     }

@@ -57,6 +57,16 @@ private func element(role: String = "AXButton", identifier: String? = nil, title
     #expect(scoped.map(\.path) == [[0, 1, 0]])
 }
 
+@Test func unknownPositionIsNeverAContainer() {
+    // Reported by the peer review of d51cef4: an empty path is a prefix of every path,
+    // so accepting one as a container would scope an action to the whole app.
+    let unknown = element(role: "AXGroup", identifier: "legacy-or-root", path: [])
+    let anything = element(title: "Yes", path: [9, 9, 9])
+    #expect(!ElementTree.isDescendant(anything, of: unknown))
+    #expect(ElementTree.descendants(of: unknown, in: [anything]).isEmpty)
+    #expect(ElementTree.innermostContainer(of: anything, roles: ["AXGroup"], in: [unknown]) == nil)
+}
+
 @Test func innermostContainerPicksTheOwningRow() {
     let outerList = element(role: "AXGroup", path: [0])
     let row = element(role: "AXRow", path: [0, 3])
