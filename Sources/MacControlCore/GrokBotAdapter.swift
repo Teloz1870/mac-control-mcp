@@ -144,17 +144,28 @@ public final class GrokBotAdapter: AppAdapter {
     /// The sidebar's bot entries. Grok Bot gives each row a button whose Accessibility
     /// description is the bot's name, so the name and the thing you press are the same
     /// element — no reading a label out of one node and pressing another.
-    private func botButtons(in elements: [ElementSnapshot]) throws -> [ElementSnapshot] {
+    /// The sidebar's entries, as the name to show and the element to press.
+    ///
+    /// The row button's description is decorated with transient state — on 0.30 an unread
+    /// row reads "HF Test Author, Unread activity" — so it identifies the row but is not
+    /// the bot's name. The name is the row's first label, which carries no status. Taking
+    /// the two from the same row keeps them tied together without trusting either alone.
+    private func botEntries(in elements: [ElementSnapshot]) throws -> [(button: ElementSnapshot, name: String)] {
         let list = try locate("bot-list", in: elements)
-        return ElementTree.descendants(of: list, in: elements).filter {
-            $0.role == "AXButton"
-                && $0.actions.contains(kAXPressAction)
-                && !($0.description ?? "").isEmpty
-        }
+        let inList = ElementTree.descendants(of: list, in: elements)
+        return inList
+            .filter { $0.role == "AXButton" && $0.actions.contains(kAXPressAction) && !($0.description ?? "").isEmpty }
+            .compactMap { button in
+                let label = ElementTree.descendants(of: button, in: elements)
+                    .first { $0.role == "AXStaticText" }?
+                    .value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let name = label ?? button.description, !name.isEmpty else { return nil }
+                return (button, name)
+            }
     }
 
     private func listBots() throws -> [String] {
-        try botButtons(in: try fullTree()).compactMap(\.description)
+        try botEntries(in: try fullTree()).map(\.name)
     }
 
     /// The name of the conversation currently on screen, taken from the main landmark.
@@ -164,10 +175,10 @@ public final class GrokBotAdapter: AppAdapter {
 
     private func openBot(name: String) async throws {
         let elements = try fullTree()
-        let matches = try botButtons(in: elements).filter {
-            $0.description?.localizedCaseInsensitiveCompare(name) == .orderedSame
+        let matches = try botEntries(in: elements).filter {
+            $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame
         }
-        guard matches.count == 1, let button = matches.first else {
+        guard matches.count == 1, let button = matches.first?.button else {
             throw MacControlError.elementNotFound("exactly one bot named \(name) in the sidebar; found \(matches.count)")
         }
         if currentBot(in: elements)?.localizedCaseInsensitiveCompare(name) == .orderedSame { return }

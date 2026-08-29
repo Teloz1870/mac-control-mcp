@@ -7,6 +7,7 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 ### Added
 
 - Grok Bot 0.30.x is supported, admitted the way the range is meant to be widened: a capability diff against 0.29.0, then a direct check that every landmark the adapter anchors on still resolves. Supported minors are now an explicit set rather than a single hardcoded number, so admitting one is a deliberate act.
+- `grokbot_list_bots` and `grokbot_open_bot` take each bot's name from the row's own label rather than the row button's description. On 0.30 that description carries transient state — an unread row reads `HF Test Author, Unread activity` — so it identifies the row but is not the name, and matching on it would fail for exactly the bots that have something to say. Found by upgrading, not by the diff: a description that changes with unread state cannot be caught by comparing two snapshots.
 - `mac_diff_capabilities` reports added and removed Accessibility descriptions. Roles, actions and menus say whether the app changed shape; the descriptions say whether an adapter's selectors still land, which is the question the diff exists to answer. It did not compare them until now.
 
 ### Fixed
