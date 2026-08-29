@@ -1,0 +1,7 @@
+{
+  "gates": [
+    "swift build",
+    "./scripts/test.sh",
+    "./scripts/security-check.sh"
+  ]
+}
