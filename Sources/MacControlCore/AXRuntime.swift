@@ -175,8 +175,12 @@ public final class AXController {
         // Frontmost only settles which app receives the key. Within that app the Return
         // still lands wherever focus actually is, so the element must confirm it holds
         // focus — the setter's own result is not taken on trust.
-        guard focusResult == .success, boolAttribute(element, kAXFocusedAttribute) == true else {
-            throw MacControlError.unavailable("Element did not take keyboard focus, so a Return key event could reach a different field in the same app. Refusing to send it.")
+        // What matters is whether the element holds focus, not whether the setter said so:
+        // a field that was already focused can return a non-success set and still be the
+        // right target. The readback is the authority; the setter's result is a hint.
+        _ = focusResult
+        guard boolAttribute(element, kAXFocusedAttribute) == true else {
+            throw MacControlError.unavailable("Element does not hold keyboard focus, so a Return key event could reach a different field in the same app. Refusing to send it.")
         }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),

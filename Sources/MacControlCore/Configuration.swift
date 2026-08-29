@@ -6,11 +6,15 @@ public struct MacControlConfiguration: Codable, Sendable, Equatable {
     public var maximumScanDepth: Int
     public var maximumScanNodes: Int
 
+    // Electron apps derive their Accessibility tree from the DOM, so real controls sit
+    // far deeper than a native window's would. Grok Bot 0.29 puts its bot list past
+    // depth 12, where a shallower limit silently returns an empty result rather than
+    // an error — the traversal simply stops before reaching anything that matters.
     public static let `default` = MacControlConfiguration(
         allowedBundleIDs: ["com.anysphere.sand"],
         handleLifetimeSeconds: 30,
-        maximumScanDepth: 12,
-        maximumScanNodes: 2_000
+        maximumScanDepth: 30,
+        maximumScanNodes: 8_000
     )
 
     public static var supportDirectory: URL {

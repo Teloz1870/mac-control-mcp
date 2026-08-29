@@ -114,7 +114,7 @@ public final class GrokBotAdapter: AppAdapter {
     }
 
     private func listBots() throws -> [String] {
-        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let elements = try fullTree()
         let excluded = Set(["new bot", "search", "plugins", "settings", "update", "view conversation details", "close", "minimize", "zoom"])
         return Array(Set(elements.filter { $0.role == "AXButton" && $0.actions.contains(kAXPressAction) }.compactMap { item in
             guard let title = item.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty,
@@ -128,7 +128,7 @@ public final class GrokBotAdapter: AppAdapter {
     }
 
     private func readConversation(limit: Int) throws -> [String] {
-        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let elements = try fullTree()
         let controls = Set(["Bots", "New Bot", "Search", "View conversation details", "Send"])
         var messages: [String] = []
         for item in elements where ["AXStaticText", "AXTextArea"].contains(item.role ?? "") {
@@ -163,7 +163,7 @@ public final class GrokBotAdapter: AppAdapter {
         guard let widget = try resolve(selectors.first { $0.name == "question-widget" }!, using: ax, limit: 2).first else {
             throw MacControlError.elementNotFound("GrokBot.question-widget; refusing an app-wide press for answer \(answer)")
         }
-        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let elements = try fullTree()
         let candidates = ElementTree.descendants(of: widget, in: elements).filter {
             $0.role == "AXButton"
                 && $0.title?.localizedCaseInsensitiveCompare(answer) == .orderedSame
@@ -203,7 +203,7 @@ public final class GrokBotAdapter: AppAdapter {
 
     private func listRoutines() throws -> [String] {
         try openDetailsIfNeeded()
-        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let elements = try fullTree()
         return Array(Set(elements.compactMap { item in
             guard ["AXRow", "AXGroup", "AXStaticText"].contains(item.role ?? ""),
                   let text = item.title ?? item.value,
@@ -225,7 +225,7 @@ public final class GrokBotAdapter: AppAdapter {
     /// "Run now" button belonging to a different routine can never be pressed instead.
     private func routineAction(name: String, actionLabels: [String]) throws {
         try openDetailsIfNeeded()
-        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let elements = try fullTree()
         let labels = elements.filter {
             ($0.value ?? $0.title)?.localizedCaseInsensitiveContains(name) == true
         }
@@ -253,7 +253,7 @@ public final class GrokBotAdapter: AppAdapter {
     /// and can never be toggled by mistake.
     private func setRoutine(name: String, enabled: Bool) throws {
         try openDetailsIfNeeded()
-        let elements = try ax.inspect(bundleID: bundleID, maxDepth: 12, maxNodes: 2_000)
+        let elements = try fullTree()
         let labels = elements.filter {
             ($0.value ?? $0.title)?.localizedCaseInsensitiveContains(name) == true
         }
@@ -271,6 +271,17 @@ public final class GrokBotAdapter: AppAdapter {
         }
         let current = ["1", "true", "on"].contains(toggle.value?.lowercased() ?? "")
         if current != enabled { try ax.perform(handle: toggle.handle, action: kAXPressAction) }
+    }
+
+    /// Scans as deep as the configuration allows rather than a hardcoded depth. A limit
+    /// that stops short of the controls does not fail — it returns an empty list, which
+    /// reads as "no bots" instead of "I did not look far enough".
+    private func fullTree() throws -> [ElementSnapshot] {
+        try ax.inspect(
+            bundleID: bundleID,
+            maxDepth: ax.configuration.maximumScanDepth,
+            maxNodes: ax.configuration.maximumScanNodes
+        )
     }
 
     private func required(_ name: String, _ arguments: [String: String]) throws -> String {
