@@ -86,7 +86,13 @@ Read [SECURITY.md](SECURITY.md) before adding adapters. Architecture and extensi
 
 ## Status
 
-`v0.1.0-preview` targets Grok Bot 0.29.x. The generic core is designed for compiled-in Slack, Discord, Cursor and other adapters later. Dynamic third-party loading is intentionally out of scope for v1.
+`v0.1.1-preview` targets Grok Bot 0.29.x, and the adapter has now been driven against a live 0.29.0 install rather than fixtures alone. The generic core is designed for compiled-in Slack, Discord, Cursor and other adapters later. Dynamic third-party loading is intentionally out of scope for v1.
+
+Known limitations on 0.29.x, all found by using the adapter rather than reading it:
+
+- The sidebar publishes `AXPress` on each conversation row and ignores it. `grokbot_open_bot` presses, confirms against the window's own title, and fails with that fact rather than reporting a switch that did not happen. There is no coordinate fallback.
+- Web-backed fields accept an Accessibility write and can discard it, and they update their reported value and focus on the next render rather than on the call. `mac_set_value` and `submitText` wait for the app to answer and fail when the value did not survive.
+- The Accessibility grant is bound to the binary, so reinstalling drops it until the entry is removed and re-added. `scripts/ship.sh` signs with a stable identifier to reduce this; a Developer ID is the real fix.
 
 ## License
 
