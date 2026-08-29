@@ -4,6 +4,8 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.1-preview] - 2026-08-29
+
 ### Added
 
 - `grokbot_notify_handover` rings a peer agent's doorbell for the [Agent Handover Protocol](https://github.com/Teloz1870/agent-handover-protocol). It accepts a repo-relative `.md` pointer and nothing else, so the bridge cannot become a second, unversioned transport for handover content, claims or approval.
@@ -32,5 +34,6 @@ All notable changes follow Keep a Changelog. Versions use Semantic Versioning.
 - `doctor`, `scan` and `version` CLI commands.
 - Unit fixtures, CI, universal preview release workflow and source-first installer.
 
-[Unreleased]: https://github.com/Teloz1870/mac-control-mcp/compare/v0.1.0-preview...HEAD
+[Unreleased]: https://github.com/Teloz1870/mac-control-mcp/compare/v0.1.1-preview...HEAD
+[0.1.1-preview]: https://github.com/Teloz1870/mac-control-mcp/compare/v0.1.0-preview...v0.1.1-preview
 [0.1.0-preview]: https://github.com/Teloz1870/mac-control-mcp/releases/tag/v0.1.0-preview

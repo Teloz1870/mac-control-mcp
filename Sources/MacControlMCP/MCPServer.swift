@@ -164,7 +164,7 @@ final class ToolService {
 }
 
 enum MacControlServer {
-    static let version = "0.1.0-preview"
+    static let version = "0.1.1-preview"
     static let instructions = "mac-control-mcp controls explicitly allowed local macOS apps through Accessibility. Reading is redacted. Sending prompts, changing values, pressing controls, and running routines modify external state and must follow the host client's approval rules. Never request secrets, secure fields, wallet data, cookies, or tokens. Handles expire quickly; inspect again when stale. Selectors never fall back to screen coordinates. Unknown Grok Bot versions must stop and be rescanned."
 
     @MainActor
